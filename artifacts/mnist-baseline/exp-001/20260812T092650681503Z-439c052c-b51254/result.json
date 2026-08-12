@@ -1,0 +1,15 @@
+{
+  "primary_metric_name": "validation/loss",
+  "primary_metric": 0.04636064219474793,
+  "metrics": {
+    "train/loss": 0.03247786363823847,
+    "train/accuracy": 0.99,
+    "validation/loss": 0.04636064219474793,
+    "validation/accuracy": 0.9848,
+    "best/epoch": 5.0
+  },
+  "checkpoint": "checkpoint.pt",
+  "data_sha256": "ab60c1c6a14c7c1c102bca4a5193d8b541317cfe634e824d1d13bd503b66bc25",
+  "model_sha256": "b89c1abf58a2e5be2e14aaceab528239ddd19147b0d3c6ea128687c39c50094c",
+  "tracking_degraded": false
+}

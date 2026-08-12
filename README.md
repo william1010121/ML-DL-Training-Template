@@ -227,7 +227,7 @@ The repository validates `WORLD_SIZE=2` against the config and refuses DDP witho
 <!-- sync:start support-matrix -->
 | Runtime | Architecture | Status | Evidence |
 | --- | --- | --- | --- |
-| Native CPU / MNIST | macOS arm64, Linux amd64 | Pending local verification | No promoted run yet |
+| Native CPU / MNIST | macOS arm64 | Locally verified | [Promoted exp-001 evidence](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/summary.json) |
 | Native MPS | macOS arm64 | Manual / unverified | No promoted run yet |
 | CPU Docker | Linux amd64 | CI-configured / locally unverified | Docker daemon unavailable during bootstrap |
 | Single NVIDIA GPU | Linux amd64, CUDA 12.6 | Supported contract / manual-unverified | No GPU run in this repository |
@@ -236,7 +236,24 @@ The repository validates `WORLD_SIZE=2` against the config and refuses DDP witho
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 
-This table should change only when new evidence exists. The initial CPU MNIST result will be added after it is run from a clean commit, validated, and promoted.
+This table changes only when matching evidence exists. Linux CPU remains covered by CI configuration and contract tests, not by the local macOS training result.
+
+## Verified reference
+
+The bundled baseline was trained from a clean commit. Its official test set remained untouched; the reported result is from the deterministic 5,000-example validation split.
+
+<!-- sync:start verified-evidence -->
+| Field | Verified value |
+| --- | --- |
+| Experiment | `mnist-baseline/exp-001` |
+| Source commit | `439c052c57242d7a5806e9070203c5ae2061cc77` |
+| Date / platform | 2026-08-12 / macOS 26.3 arm64 |
+| Runtime | Python 3.12.9 / PyTorch 2.13.0 / native CPU |
+| Seed / split | 42 / deterministic 55,000 train + 5,000 validation |
+| Primary result | `validation/loss = 0.0463606422` at epoch 5 |
+| Secondary result | `validation/accuracy = 0.9848` |
+| Evidence | [summary](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/summary.json) · [validation](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/validation.json) · [checksums](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/checksums.sha256) |
+<!-- sync:end verified-evidence -->
 
 ## Reproducibility contract
 

@@ -1,0 +1,37 @@
+data:
+  batch_size: 128
+  num_workers: 0
+  root: datasets
+  validation_size: 5000
+experiment:
+  goal: Establish the verified CPU reference for the MNIST baseline.
+  id: exp-001
+  primary_metric:
+    direction: minimize
+    name: validation/loss
+  research_line: mnist-baseline
+model:
+  hidden_channels: 32
+  in_channels: 1
+  name: mnist_cnn
+  num_classes: 10
+output:
+  root: runs
+reproducibility:
+  mode: strict
+  seed: 42
+runtime:
+  device: cpu
+  strategy: single
+  world_size: 1
+schema_version: 1
+tracking:
+  backend: noop
+training:
+  epochs: 5
+  optimizer:
+    learning_rate: 0.001
+    name: adamw
+    weight_decay: 0.0001
+validation:
+  batch_size: 256

@@ -227,7 +227,7 @@ Repository 會檢查 `WORLD_SIZE=2` 與 config 是否一致，並拒絕缺少 sh
 <!-- sync:start support-matrix -->
 | Runtime | Architecture | Status | Evidence |
 | --- | --- | --- | --- |
-| Native CPU / MNIST | macOS arm64, Linux amd64 | Pending local verification | No promoted run yet |
+| Native CPU / MNIST | macOS arm64 | Locally verified | [Promoted exp-001 evidence](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/summary.json) |
 | Native MPS | macOS arm64 | Manual / unverified | No promoted run yet |
 | CPU Docker | Linux amd64 | CI-configured / locally unverified | Docker daemon unavailable during bootstrap |
 | Single NVIDIA GPU | Linux amd64, CUDA 12.6 | Supported contract / manual-unverified | No GPU run in this repository |
@@ -236,7 +236,24 @@ Repository 會檢查 `WORLD_SIZE=2` 與 config 是否一致，並拒絕缺少 sh
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 
-這張表只能跟著新 evidence 更新。初始 CPU MNIST 必須從 clean commit 執行、validate 並 promote 後，才會被寫成 verified。
+這張表只跟著相符的 evidence 更新。Linux CPU 目前有 CI 設定與 contract tests，但本次完整訓練的本機證據只涵蓋 macOS。
+
+## 已驗證參考結果
+
+內建 baseline 從 clean commit 開始訓練；官方 test set 全程未參與，本表只回報 deterministic 5,000 筆 validation split 的結果。
+
+<!-- sync:start verified-evidence -->
+| Field | Verified value |
+| --- | --- |
+| Experiment | `mnist-baseline/exp-001` |
+| Source commit | `439c052c57242d7a5806e9070203c5ae2061cc77` |
+| Date / platform | 2026-08-12 / macOS 26.3 arm64 |
+| Runtime | Python 3.12.9 / PyTorch 2.13.0 / native CPU |
+| Seed / split | 42 / deterministic 55,000 train + 5,000 validation |
+| Primary result | `validation/loss = 0.0463606422` at epoch 5 |
+| Secondary result | `validation/accuracy = 0.9848` |
+| Evidence | [summary](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/summary.json) · [validation](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/validation.json) · [checksums](artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254/checksums.sha256) |
+<!-- sync:end verified-evidence -->
 
 ## 可重現性契約
 

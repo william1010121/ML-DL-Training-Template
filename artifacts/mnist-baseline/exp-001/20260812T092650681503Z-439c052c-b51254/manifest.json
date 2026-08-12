@@ -1,0 +1,72 @@
+{
+  "command": [
+    "python3.12",
+    "-m",
+    "mltrain",
+    "train",
+    "--config",
+    "configs/mnist-baseline/exp-001.yml"
+  ],
+  "config": {
+    "path": "configs/mnist-baseline/exp-001.yml",
+    "resolved_sha256": "deb9e45e45b5bac6f8e3a773ad12de9f7fbb4c0e7fbe219b88121f9a3741c9d5",
+    "source_sha256": "5a62577ff5bb5c25faca75e6b802e9c6ba98f563aa704618b0c25558d8338350"
+  },
+  "experiment": {
+    "goal": "Establish the verified CPU reference for the MNIST baseline.",
+    "id": "exp-001",
+    "primary_metric": {
+      "direction": "minimize",
+      "name": "validation/loss"
+    },
+    "research_line": "mnist-baseline"
+  },
+  "finished_at": "2026-08-12T09:29:42.741304+00:00",
+  "kind": "train",
+  "provenance": {
+    "container": "native",
+    "data_sha256": "ab60c1c6a14c7c1c102bca4a5193d8b541317cfe634e824d1d13bd503b66bc25",
+    "environment_sha256": "340a67ac7b75e61fe2a8d7f337347892153dd41c190ae8248dc9542de8db0b17",
+    "image_digest": null,
+    "lockfile_sha256": "77fa4ee03f3040f90f1ea057b83c2f13780a4ad204f17701002db702766c82bb",
+    "machine": "arm64",
+    "model_sha256": "b89c1abf58a2e5be2e14aaceab528239ddd19147b0d3c6ea128687c39c50094c",
+    "oci_digest": null,
+    "packages": {
+      "PyYAML": "6.0.3",
+      "ml-dl-training-template": "0.1.0",
+      "pydantic": "2.13.4",
+      "torch": "2.13.0",
+      "torchvision": "0.28.0"
+    },
+    "platform": "macOS-26.3-arm64-arm-64bit",
+    "python": "3.12.9",
+    "sif_sha256": null
+  },
+  "reproducibility": {
+    "cublas_workspace_config": "unset",
+    "cudnn_benchmark": false,
+    "deterministic_algorithms": true,
+    "mode": "strict",
+    "seed": 42
+  },
+  "result_sha256": "eadd925423e2fdf374fcb37dad72fed9e9b65ef0566622fa7eda2308dd85f532",
+  "run_id": "20260812T092650681503Z-439c052c-b51254",
+  "runtime": {
+    "device": "cpu",
+    "strategy": "single",
+    "world_size": 1
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "439c052c57242d7a5806e9070203c5ae2061cc77",
+    "dirty": false,
+    "dirty_fingerprint": null
+  },
+  "started_at": "2026-08-12T09:26:50.720344+00:00",
+  "status": "succeeded",
+  "tracking": {
+    "backend": "noop",
+    "degraded": false
+  }
+}

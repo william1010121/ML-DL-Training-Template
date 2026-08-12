@@ -1,0 +1,13 @@
+{
+  "config_sha256": "5a62577ff5bb5c25faca75e6b802e9c6ba98f563aa704618b0c25558d8338350",
+  "decision": "Promote as the verified native CPU baseline",
+  "experiment": "exp-001",
+  "primary_metric": {
+    "name": "validation/loss",
+    "value": 0.04636064219474793
+  },
+  "research_line": "mnist-baseline",
+  "result_sha256": "eadd925423e2fdf374fcb37dad72fed9e9b65ef0566622fa7eda2308dd85f532",
+  "schema_version": 1,
+  "source_commit": "439c052c57242d7a5806e9070203c5ae2061cc77"
+}

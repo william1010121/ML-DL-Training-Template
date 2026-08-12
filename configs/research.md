@@ -8,7 +8,7 @@ Train reproducible baselines that minimize `validation/loss` while keeping every
 
 | Research line | Goal | Status | Latest evidence |
 | --- | --- | --- | --- |
-| [mnist-baseline](mnist-baseline/research.md) | Establish the smallest reproducible MNIST training baseline across the supported runtime modes. | Planned | — |
+| [mnist-baseline](mnist-baseline/research.md) | Establish the smallest reproducible MNIST training baseline across the supported runtime modes. | Promoted | `exp-001` @ `439c052c` |
 
 ## Global Decisions
 

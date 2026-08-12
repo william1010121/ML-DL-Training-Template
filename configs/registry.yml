@@ -1,24 +1,25 @@
-schema_version: 1
 research_lines:
   mnist-baseline:
-    goal: Establish the smallest reproducible MNIST training baseline across the supported runtime modes.
-    status: planned
     experiments:
       exp-001:
+        completed_run: runs/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254
         config: configs/mnist-baseline/exp-001.yml
-        status: planned
-        config_sha256: null
-        completed_run: null
-        promoted_artifact: null
+        config_sha256: 5a62577ff5bb5c25faca75e6b802e9c6ba98f563aa704618b0c25558d8338350
+        promoted_artifact: artifacts/mnist-baseline/exp-001/20260812T092650681503Z-439c052c-b51254
+        status: promoted
       exp-002:
+        completed_run: null
         config: configs/mnist-baseline/exp-002.yml
-        status: planned
         config_sha256: null
-        completed_run: null
         promoted_artifact: null
+        status: planned
       exp-003:
-        config: configs/mnist-baseline/exp-003.yml
-        status: planned
-        config_sha256: null
         completed_run: null
+        config: configs/mnist-baseline/exp-003.yml
+        config_sha256: null
         promoted_artifact: null
+        status: planned
+    goal: Establish the smallest reproducible MNIST training baseline across the supported
+      runtime modes.
+    status: promoted
+schema_version: 1
