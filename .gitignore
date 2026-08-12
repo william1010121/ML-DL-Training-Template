@@ -1,0 +1,38 @@
+# Python and tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Local secrets. Keep only the key-name template.
+.env
+.env.*
+!.env.example
+
+# Mutable training state
+datasets/*
+!datasets/README.md
+checkpoints/*
+!checkpoints/README.md
+runs/*
+!runs/.gitkeep
+
+# Container artifacts are reproducible from immutable OCI digests.
+*.sif
+*.sif.sha256
+*.sif.oci-digest
+
+# Temporary promotion files
+artifacts/**/*.tmp

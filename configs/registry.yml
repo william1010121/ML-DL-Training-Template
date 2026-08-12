@@ -1,0 +1,24 @@
+schema_version: 1
+research_lines:
+  mnist-baseline:
+    goal: Establish the smallest reproducible MNIST training baseline across the supported runtime modes.
+    status: planned
+    experiments:
+      exp-001:
+        config: configs/mnist-baseline/exp-001.yml
+        status: planned
+        config_sha256: null
+        completed_run: null
+        promoted_artifact: null
+      exp-002:
+        config: configs/mnist-baseline/exp-002.yml
+        status: planned
+        config_sha256: null
+        completed_run: null
+        promoted_artifact: null
+      exp-003:
+        config: configs/mnist-baseline/exp-003.yml
+        status: planned
+        config_sha256: null
+        completed_run: null
+        promoted_artifact: null

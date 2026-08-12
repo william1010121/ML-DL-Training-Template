@@ -1,0 +1,5 @@
+# The image is deliberately environment-only. Source and research files are
+# bind-mounted at runtime and must never become image layers.
+**
+!pyproject.toml
+!uv.lock

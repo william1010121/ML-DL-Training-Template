@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/docker-run <cpu|cuda> <image> [mltrain arguments...]
+  scripts/docker-run cuda <image> --launcher torchrun \
+    --nproc-per-node <N> --run-id <unique-id> -- [mltrain arguments...]
+
+Examples:
+  scripts/docker-run cpu ml-training-template:cpu train --config configs/mnist-baseline/exp-001.yml
+  scripts/docker-run cuda ml-training-template:cuda train --config configs/mnist-baseline/exp-002.yml
+  scripts/docker-run cuda ml-training-template:cuda --launcher torchrun \
+    --nproc-per-node 2 --run-id exp003-20260812-a -- \
+    train --config configs/mnist-baseline/exp-003.yml
+EOF
+}
+
+if [[ $# -lt 2 ]]; then
+  usage >&2
+  exit 2
+fi
+
+flavor=$1
+image=$2
+shift 2
+
+case "$flavor" in
+  cpu) ;;
+  cuda) ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+launcher=mltrain
+nproc_per_node=
+run_id=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --launcher)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      launcher=$2
+      shift 2
+      ;;
+    --nproc-per-node)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      nproc_per_node=$2
+      shift 2
+      ;;
+    --run-id)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      run_id=$2
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *) break ;;
+  esac
+done
+
+if [[ "$launcher" != mltrain && "$launcher" != torchrun ]]; then
+  echo "error: launcher must be 'mltrain' or 'torchrun'" >&2
+  exit 2
+fi
+if [[ "$launcher" == torchrun ]]; then
+  if [[ "$flavor" != cuda ]]; then
+    echo "error: the template's torchrun helper requires the CUDA image" >&2
+    exit 2
+  fi
+  if [[ ! "$nproc_per_node" =~ ^[2-9][0-9]*$ ]]; then
+    echo "error: --nproc-per-node must be an integer greater than one" >&2
+    exit 2
+  fi
+  if [[ ! "$run_id" =~ ^[A-Za-z0-9_.-]+$ || ${#run_id} -gt 80 || "$run_id" == none || "$run_id" == default ]]; then
+    echo "error: --run-id must be a non-default filesystem-safe unique ID (max 80 chars)" >&2
+    exit 2
+  fi
+  if [[ $# -eq 0 ]]; then
+    echo "error: torchrun requires an mltrain command after '--'" >&2
+    exit 2
+  fi
+elif [[ -n "$nproc_per_node" || -n "$run_id" ]]; then
+  echo "error: --nproc-per-node and --run-id require --launcher torchrun" >&2
+  exit 2
+fi
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+mkdir -p \
+  "$repo_root/datasets" \
+  "$repo_root/checkpoints" \
+  "$repo_root/runs" \
+  "$repo_root/artifacts"
+
+if [[ "$launcher" == torchrun ]]; then
+  existing_run=$(find "$repo_root/runs" -type d -name "$run_id" -print -quit 2>/dev/null || true)
+  if [[ -n "$existing_run" ]]; then
+    echo "error: run ID already exists: $run_id" >&2
+    exit 2
+  fi
+fi
+
+if ! image_digest=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
+  echo "error: image is not available locally: $image" >&2
+  exit 2
+fi
+if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "error: docker inspect did not return a content-addressed image digest" >&2
+  exit 1
+fi
+
+docker_args=(run --rm --init --platform linux/amd64)
+if [[ "$flavor" == cuda ]]; then
+  docker_args+=(--gpus all)
+fi
+if [[ "$launcher" == torchrun ]]; then
+  docker_args+=(--entrypoint /opt/venv/bin/torchrun)
+  docker_args+=(--env "MLTRAIN_RUN_ID=$run_id")
+fi
+
+if [[ $# -eq 0 ]]; then
+  command_args=(--help)
+elif [[ "$launcher" == torchrun ]]; then
+  command_args=(
+    --nnodes=1
+    --nproc-per-node "$nproc_per_node"
+    --rdzv-backend=c10d
+    --rdzv-endpoint=localhost:0
+    --rdzv-id "$run_id"
+    -m mltrain
+    "$@"
+  )
+else
+  command_args=("$@")
+fi
+
+exec docker "${docker_args[@]}" \
+  --user "$(id -u):$(id -g)" \
+  --env HOME=/tmp \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --env MLTRAIN_CONTAINER=docker \
+  --env "MLTRAIN_IMAGE_DIGEST=$image_digest" \
+  --mount "type=bind,src=$repo_root,dst=/workspace,readonly" \
+  --mount "type=bind,src=$repo_root/datasets,dst=/workspace/datasets" \
+  --mount "type=bind,src=$repo_root/checkpoints,dst=/workspace/checkpoints" \
+  --mount "type=bind,src=$repo_root/runs,dst=/workspace/runs" \
+  --mount "type=bind,src=$repo_root/artifacts,dst=/workspace/artifacts" \
+  "$image_digest" "${command_args[@]}"

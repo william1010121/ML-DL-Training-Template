@@ -1,0 +1,6 @@
+interface:
+  display_name: "Add Experiment Logging"
+  short_description: "Add optional experiment tracking without coupling"
+  default_prompt: "Use $add-experiment-logging to add a local-first tracking adapter."
+policy:
+  allow_implicit_invocation: true

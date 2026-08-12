@@ -1,0 +1,37 @@
+schema_version: 1
+experiment:
+  id: exp-003
+  research_line: mnist-baseline
+  goal: Verify deterministic single-node distributed training on two NVIDIA GPUs.
+  primary_metric:
+    name: validation/loss
+    direction: minimize
+reproducibility:
+  seed: 42
+  mode: strict
+runtime:
+  device: cuda
+  strategy: ddp
+  world_size: 2
+data:
+  root: datasets
+  batch_size: 128
+  num_workers: 2
+  validation_size: 5000
+model:
+  name: mnist_cnn
+  in_channels: 1
+  num_classes: 10
+  hidden_channels: 32
+training:
+  epochs: 5
+  optimizer:
+    name: adamw
+    learning_rate: 0.001
+    weight_decay: 0.0001
+validation:
+  batch_size: 256
+tracking:
+  backend: noop
+output:
+  root: runs

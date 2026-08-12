@@ -1,0 +1,6 @@
+interface:
+  display_name: "Training Manager"
+  short_description: "Govern reproducible training experiments and evidence"
+  default_prompt: "Use $training-manager to add or update a governed training experiment."
+policy:
+  allow_implicit_invocation: true

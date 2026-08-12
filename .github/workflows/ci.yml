@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.0"
+          enable-cache: true
+      - run: uv python install "${UV_PYTHON}"
+      - run: uv sync --locked --extra cpu --group dev
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync mypy src
+      - run: uv run --no-sync pytest
+      - if: matrix.python == '3.12'
+        uses: actions/cache@v4
+        with:
+          path: datasets/MNIST
+          key: mnist-v1
+      - if: matrix.python == '3.12'
+        name: Download real MNIST explicitly
+        run: uv run --no-sync python scripts/download_mnist.py --root datasets
+      - if: matrix.python == '3.12'
+        name: Run one real MNIST CPU optimizer step
+        run: >-
+          uv run --no-sync python scripts/smoke_cpu.py
+          --config configs/mnist-baseline/exp-001.yml
+      - run: uv run --no-sync python scripts/validate_repo.py
+      - name: Validate repository-owned skill contract
+        run: uv run --no-sync python scripts/validate_skills.py --official skip
+      - run: uv run --no-sync python scripts/check_readme_sync.py
+
+  cpu-image:
+    name: CPU image (linux/amd64)
+    runs-on: ubuntu-24.04
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/Dockerfile
+          target: cpu
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ml-training-template:ci-cpu
+          cache-from: type=gha,scope=cpu
+          cache-to: type=gha,mode=max,scope=cpu
+      - name: Smoke-test bind-mounted CLI
+        run: ./scripts/docker-run cpu ml-training-template:ci-cpu --help
