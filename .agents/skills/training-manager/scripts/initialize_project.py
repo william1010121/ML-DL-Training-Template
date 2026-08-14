@@ -185,7 +185,7 @@ def initialized_readme(project_name: str, package_name: str, *, chinese: bool) -
             "4. 用 training-manager 建立 research line 與通過 project schema 的 config。",
             "5. 執行測試後再開始訓練。沒有 validated evidence 不更新支援聲明。",
             "",
-            "完整 contract 請見 `AGENTS.md` 與 `.agents/skills/training-manager/`。",
+            "完整 contract 請見 `AGENTS.md` 與 `.agents/skills/`。",
         ]
         return "\n".join(lines) + "\n"
     lines = [
@@ -203,7 +203,7 @@ def initialized_readme(project_name: str, package_name: str, *, chinese: bool) -
         "4. Use training-manager to create a research line and a schema-valid config.",
         "5. Run tests before training; require validated evidence for support claims.",
         "",
-        "See `AGENTS.md` and `.agents/skills/training-manager/` for the contract.",
+        "See `AGENTS.md` and `.agents/skills/` for the contract.",
     ]
     return "\n".join(lines) + "\n"
 

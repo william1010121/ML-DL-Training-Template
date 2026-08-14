@@ -165,7 +165,7 @@ python .agents/skills/training-manager/scripts/new_experiment.py baseline \
 
 這些命令永不覆寫檔案。Codex 會從 `.agents/skills/` 發現 skills；`AGENTS.md` 則規定什麼情況必須使用它們。
 
-## Native、Docker 與 Apptainer
+## Native、Docker、Apptainer 與 Runpod
 
 ### Docker
 
@@ -220,6 +220,30 @@ APPTAINER_RUN_ID="exp-003-apptainer-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
 Repository 會檢查 `WORLD_SIZE=2` 與 config 是否一致，並拒絕缺少 shared run identity 的 DDP。這些 helpers 只支援 single-node CUDA DDP；multi-node Slurm orchestration 不在 v1 contract 內。如果沒有 `uuidgen`，請自行提供其他唯一、符合 `[A-Za-z0-9_.-]+` 且最長 80 字元的值。
 
+### Runpod Pods
+
+`mltrain-runpod` 是 opt-in SSH transport，不會另造一套 training lifecycle，也不會偷偷建立
+Pod。它讀取 Runpod v2 Pod API，只要 `ssh.direct` 或 `ssh.proxy` 任一存在就視為 SSH ready；
+先試 direct TCP，失敗後改走 Basic SSH，不會只等 public IP。Direct transfer 使用 rsync；
+proxy 則透過 PTY-safe base64 stream 傳輸，完成 atomic move 前會驗證 SHA-256。
+
+<!-- sync:start runpod-transport-commands -->
+```bash
+uv run mltrain-runpod endpoint "$POD_ID"
+uv run mltrain-runpod upload "$POD_ID" source.tar /workspace/source.tar
+uv run mltrain-runpod exec "$POD_ID" -- bash /workspace/start-training.sh
+uv run mltrain-runpod download "$POD_ID" \
+  /workspace/run.tar.gz runs/_runpod-downloads/run.tar.gz
+```
+<!-- sync:end runpod-transport-commands -->
+
+Helper 只從 `RUNPOD_API_KEY` 或 `~/.runpod/config.toml` 讀取 key，不會把 key 寫進紀錄；
+key 必須具有 v2 Pod read 權限。Runpod proxy username 是 API 回傳的 opaque value，
+不會自行拼接。Basic SSH 不支援 SCP、
+SFTP、rsync 或 port forwarding；本模板預設限制 proxy transfer 為 512 MiB。Dataset 與大型
+checkpoint 應放 image、object storage 或 network volume。Pod 建立、detached training、deadline
+與刪除仍由各專案 controller 負責，並遵守 `runpod-training` skill。
+
 ## 支援狀態
 
 「Configured」代表 contract 與 automation 已存在；「Verified」只留給 repository 裡真的有 evidence 的執行。
@@ -233,6 +257,7 @@ Repository 會檢查 `WORLD_SIZE=2` 與 config 是否一致，並拒絕缺少 sh
 | Single NVIDIA GPU | Linux amd64, CUDA 12.6 | Supported contract / manual-unverified | No GPU run in this repository |
 | Single-node DDP | Linux amd64, 2× NVIDIA GPU | Supported contract / manual-unverified | No DDP run in this repository |
 | Apptainer / SIF | Linux amd64 | Supported contract / manual-unverified | Apptainer unavailable during bootstrap |
+| Runpod Pod SSH transport | Direct TCP or Basic SSH proxy | Contract-tested / live proxy unverified | Fallback and PTY transfer unit tests; no promoted GPU run |
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 
@@ -270,7 +295,7 @@ Repository 會檢查 `WORLD_SIZE=2` 與 config 是否一致，並拒絕缺少 sh
 
 `mltrain` 是固定、project-neutral 的核心。可替換 package 只實作一個由 `pyproject.toml` 中 `[tool.mltrain]` 選定的 `ProjectAdapter`。Project training 可以依賴自己的 data、model 與 tracking；project validation 不得依賴 training orchestration。換研究任務時不需要 fork 治理核心。
 
-模板刻意採 PyTorch-first，也刻意不預裝 Hydra、Lightning、W&B、MLflow、雲端廠商 API、DVC 或 Git LFS。專案真的需要時再加；`add-experiment-logging` skill 定義了 local-first adapter contract。
+模板刻意採 PyTorch-first，也不讓 training 綁死 Hydra、Lightning、W&B、MLflow、DVC、Git LFS 或特定雲端平台。Runpod transport 是 optional、只用標準函式庫的 integration，core lifecycle 與 project adapter 不會 import 它。外部 tracking 等專案真的需要時再加；`add-experiment-logging` skill 定義了 local-first adapter contract。
 
 ## 貢獻
 

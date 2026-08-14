@@ -28,6 +28,7 @@ REQUIRED_PATHS = (
     "configs/registry.yml",
     ".agents/skills/training-manager/SKILL.md",
     ".agents/skills/add-experiment-logging/SKILL.md",
+    ".agents/skills/runpod-training/SKILL.md",
 )
 SECRET_PATTERNS = (
     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -491,7 +492,7 @@ def _validate_research_documents(root: Path, errors: list[str]) -> None:
 
 
 def _validate_skills(root: Path, errors: list[str]) -> None:
-    for name in ("training-manager", "add-experiment-logging"):
+    for name in ("training-manager", "add-experiment-logging", "runpod-training"):
         path = root / ".agents/skills" / name / "SKILL.md"
         if not path.is_file():
             continue

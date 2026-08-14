@@ -10,6 +10,10 @@
 
 Do not introduce imports from `mltrain` into a specific project implementation beyond public contracts. Keep validation independent of training orchestration.
 
+Provider integrations must remain opt-in. `src/mltrain/runpod_transport.py` may be imported by a
+project controller, but the core lifecycle and project adapter must not import it. A project that
+does not use Runpod must not need Runpod credentials, CLI tools, or network access.
+
 ## Configuration contract
 
 Keep the project-specific Pydantic schema in `src/<project_package>/config.py`. Keep only project-neutral fields and contracts in `src/mltrain/`; do not add task-specific model, dataset, optimizer, metric, or tracker choices there.

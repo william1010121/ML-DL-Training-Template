@@ -8,6 +8,11 @@ Before changing source code, training or validation behavior, configs, experimen
 
 Before adding or changing metrics, tracker behavior, W&B, MLflow, TensorBoard, or any logging adapter, also read and follow `.agents/skills/add-experiment-logging/SKILL.md`. Canonical local logs must remain available when an external tracker is absent or fails.
 
+Before adding or changing Runpod Pod creation, SSH readiness, source or artifact transfer,
+detached execution, cost watchdogs, or teardown, also read and follow
+`.agents/skills/runpod-training/SKILL.md`. Basic SSH proxy availability must prevent public-IP-only
+wait loops; support claims still require real evidence.
+
 ## Architecture invariants
 
 - `src/mltrain/` is the stable governance and CLI layer. It must not import the project package directly; load the configured `ProjectAdapter` dynamically.

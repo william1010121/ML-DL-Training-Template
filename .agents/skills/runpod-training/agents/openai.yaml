@@ -1,0 +1,6 @@
+interface:
+  display_name: "Runpod Training"
+  short_description: "Run reproducible GPU training on Runpod Pods"
+  default_prompt: "Use $runpod-training to run this experiment on a Runpod Pod safely."
+policy:
+  allow_implicit_invocation: true

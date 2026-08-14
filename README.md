@@ -165,7 +165,7 @@ python .agents/skills/training-manager/scripts/new_experiment.py baseline \
 
 These commands never overwrite files. Codex discovers the skills in `.agents/skills/`; `AGENTS.md` tells agents when the workflows are mandatory.
 
-## Native, Docker, and Apptainer
+## Native, Docker, Apptainer, and Runpod
 
 ### Docker
 
@@ -220,6 +220,31 @@ APPTAINER_RUN_ID="exp-003-apptainer-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
 The repository validates `WORLD_SIZE=2` against the config and refuses DDP without the shared run identity. These helpers support single-node CUDA DDP only; multi-node Slurm orchestration is outside the v1 contract. If `uuidgen` is unavailable, provide another unique value matching `[A-Za-z0-9_.-]+` and at most 80 characters.
 
+### Runpod Pods
+
+`mltrain-runpod` is an opt-in SSH transport, not a hidden training lifecycle or Pod creator. It
+queries Runpod's v2 Pod API, treats either `ssh.direct` or `ssh.proxy` as ready, tries direct TCP
+first, and falls back to Basic SSH without waiting for a public IP. Direct transfers use rsync;
+proxy transfers use a PTY-safe base64 stream and verify SHA-256 before an atomic move.
+
+<!-- sync:start runpod-transport-commands -->
+```bash
+uv run mltrain-runpod endpoint "$POD_ID"
+uv run mltrain-runpod upload "$POD_ID" source.tar /workspace/source.tar
+uv run mltrain-runpod exec "$POD_ID" -- bash /workspace/start-training.sh
+uv run mltrain-runpod download "$POD_ID" \
+  /workspace/run.tar.gz runs/_runpod-downloads/run.tar.gz
+```
+<!-- sync:end runpod-transport-commands -->
+
+The helper reads `RUNPOD_API_KEY` or `~/.runpod/config.toml` and never records the key; the key
+must have v2 Pod read access. Runpod's proxy username is an opaque API value; the helper never
+constructs it. Basic SSH does not support
+SCP, SFTP, rsync, or port forwarding, and its default transfer limit here is 512 MiB. Keep datasets
+and large checkpoints in images, object storage, or a network volume. Pod creation, detached
+training, deadlines, and deletion remain the responsibility of a project controller following the
+`runpod-training` skill.
+
 ## Support matrix
 
 “Configured” means the contract and automation exist. “Verified” is reserved for an execution backed by evidence in this repository.
@@ -233,6 +258,7 @@ The repository validates `WORLD_SIZE=2` against the config and refuses DDP witho
 | Single NVIDIA GPU | Linux amd64, CUDA 12.6 | Supported contract / manual-unverified | No GPU run in this repository |
 | Single-node DDP | Linux amd64, 2× NVIDIA GPU | Supported contract / manual-unverified | No DDP run in this repository |
 | Apptainer / SIF | Linux amd64 | Supported contract / manual-unverified | Apptainer unavailable during bootstrap |
+| Runpod Pod SSH transport | Direct TCP or Basic SSH proxy | Contract-tested / live proxy unverified | Fallback and PTY transfer unit tests; no promoted GPU run |
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 
@@ -270,7 +296,7 @@ The bundled baseline was trained from a clean commit. Its official test set rema
 
 `mltrain` is the stable, project-neutral core. The replaceable package implements a single `ProjectAdapter` selected by `[tool.mltrain]` in `pyproject.toml`. Project training may depend on its data, model, and tracking modules; project validation must not depend on training orchestration. This keeps a new research task replaceable without forking the governance layer.
 
-The template is intentionally PyTorch-first. It does not bundle Hydra, Lightning, W&B, MLflow, a cloud vendor API, DVC, or Git LFS. Add integrations only when a project needs them; the `add-experiment-logging` skill documents the local-first adapter contract.
+The template is intentionally PyTorch-first. It does not bind training to Hydra, Lightning, W&B, MLflow, DVC, Git LFS, or a cloud platform. The Runpod transport is an optional standard-library integration and is never imported by the core lifecycle or project adapter. Add external tracking only when a project needs it; the `add-experiment-logging` skill documents the local-first adapter contract.
 
 ## Contributing
 

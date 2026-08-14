@@ -33,7 +33,7 @@ def _write(path: Path, text: str = "placeholder\n") -> None:
 def _valid_repository(root: Path) -> Path:
     for relative in validate_repo.REQUIRED_PATHS:
         _write(root / relative)
-    for name in ("training-manager", "add-experiment-logging"):
+    for name in ("training-manager", "add-experiment-logging", "runpod-training"):
         _write(
             root / ".agents/skills" / name / "SKILL.md",
             f"---\nname: {name}\ndescription: Test skill.\n---\n\n# Test\n",

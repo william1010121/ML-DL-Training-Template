@@ -15,6 +15,8 @@ Preserve the repository's separation between experiment intent, runtime evidence
 4. Treat an experiment config as mutable only while its registry status is `planned`. Create the next experiment after a result has been recorded.
 5. When adding, removing, renaming, or widening a YAML option, update the project-specific Pydantic schema in `src/<project_package>/config.py`, the consuming runtime code, and focused tests in the same change. Never let the schema advertise behavior the implementation does not support.
 6. Run the repository validators and focused tests after changes. Do not claim support without evidence.
+7. Read and follow `../runpod-training/SKILL.md` before changing Runpod Pod orchestration,
+   SSH readiness, remote transfer, watchdog, or teardown behavior.
 
 ## Deterministic operations
 
