@@ -49,6 +49,12 @@ order with a bounded connection timeout.
 - Remote paths must be simple absolute POSIX paths. Sources and downloaded artifacts must be
   regular non-symlink files.
 
+Report endpoint wait elapsed time against its bounded timeout. Report direct rsync and proxy
+base64 transfers against verified byte totals. Use dynamic progress only on a TTY; emit plain
+append-only lines every 5% or 30 seconds in detached logs. Write progress to stderr so JSON output
+remains machine readable, redact credentials, and treat progress failures as presentation failures
+rather than transport or training failures.
+
 The default Basic SSH transfer limit is 512 MiB. Prefer object storage, a network volume, or
 Runpod's transfer tooling for larger assets; the proxy fallback is for source archives and
 bounded run evidence, not datasets or checkpoints.
@@ -70,6 +76,7 @@ created, training, finalization, and deletion deadlines
 last successful SSH mode: direct | proxy
 remote process/control paths
 retrieved artifact path and SHA-256
+retrieved profile archive path and SHA-256 when profiling is enabled
 append-only lifecycle events
 ```
 
@@ -83,3 +90,7 @@ Runpod transport success is not experiment success. The remote command must stil
 normal `resolved_config.yml`, manifest, metrics, result, checkpoint, and validation inputs. After
 retrieval, run the repository's normal `mltrain validate`; only a clean strict completed run may
 be recorded or promoted.
+
+If profiling is enabled, retrieve raw `profile/*.jsonl` and summaries with the run archive before
+Pod deletion. These elapsed-time/resource samples are diagnostics, not deadline enforcement; the
+controller still needs a separate training/finalization/deletion watchdog.

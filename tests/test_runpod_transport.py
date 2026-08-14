@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from mltrain import runpod_transport as transport
+from mltrain.progress import ProgressReporter
 
 
 def _pod(*, direct: bool = True, proxy: bool = True) -> dict[str, object]:
@@ -173,13 +175,22 @@ def test_proxy_upload_and_download_are_checksummed_and_idempotent(
     remote = tmp_path / "remote/archive.bin"
     destination = tmp_path / "download/archive.bin"
 
-    used_upload = transport.upload_file([endpoint], source, str(remote), timeout=10)
-    used_download = transport.download_file([endpoint], str(remote), destination, timeout=10)
+    progress_output = io.StringIO()
+    reporter = ProgressReporter("plain", stream=progress_output, percent_interval=5)
+    used_upload = transport.upload_file(
+        [endpoint], source, str(remote), timeout=10, progress=reporter
+    )
+    used_download = transport.download_file(
+        [endpoint], str(remote), destination, timeout=10, progress=reporter
+    )
 
     assert used_upload.mode == "proxy"
     assert used_download.mode == "proxy"
     assert remote.read_bytes() == source.read_bytes()
     assert destination.read_bytes() == source.read_bytes()
+    assert "Runpod proxy upload: completed" in progress_output.getvalue()
+    assert "Runpod proxy download: completed" in progress_output.getvalue()
+    assert "\x1b" not in progress_output.getvalue()
 
     # Retrying the same immutable object is allowed and does not rewrite history.
     transport.upload_file([endpoint], source, str(remote), timeout=10)
@@ -232,13 +243,38 @@ def test_upload_falls_back_from_direct_to_proxy(
 def test_cli_endpoint_reports_both_modes(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    def wait(*_args: object, **kwargs: object) -> tuple[transport.SshEndpoint, ...]:
+        reporter = kwargs["progress"]
+        assert isinstance(reporter, ProgressReporter)
+        with reporter.stage("Runpod SSH readiness"):
+            return transport.ssh_endpoints(_pod())
+
     monkeypatch.setattr(
         transport,
         "wait_for_ssh",
-        lambda *_args, **_kwargs: transport.ssh_endpoints(_pod()),
+        wait,
     )
 
     assert transport.main(["endpoint", "pod123456"]) == 0
-    output = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
 
     assert [value["mode"] for value in output] == ["direct", "proxy"]
+    assert "Runpod SSH readiness" in captured.err
+
+
+def test_rsync_progress_is_relayed_as_plain_text() -> None:
+    output = io.StringIO()
+    reporter = ProgressReporter("plain", stream=output)
+
+    returncode, _ = transport._run_rsync(
+        ["/bin/sh", "-c", "printf ' 50%%\\r 100%%\\n'"],
+        progress=reporter,
+        total_bytes=1000,
+        description="Runpod direct upload",
+        timeout=5,
+    )
+
+    assert returncode == 0
+    assert "Runpod direct upload: 500/1000 byte (50%)" in output.getvalue()
+    assert "Runpod direct upload: completed 1000 byte" in output.getvalue()

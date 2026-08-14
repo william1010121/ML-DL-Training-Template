@@ -77,7 +77,7 @@ Promotion stores only small, reviewable metadata in `artifacts/`; it does not co
 │   ├── registry.yml               # Experiment lifecycle and evidence pointers
 │   └── mnist-baseline/
 │       ├── research.md            # Goal and concise result decisions for this line
-│       └── exp-001.yml … exp-003.yml
+│       └── exp-001.yml … exp-004.yml
 ├── datasets/                      # Local data; contents ignored
 ├── checkpoints/                   # Local/pretrained weights; contents ignored
 ├── runs/                          # Complete local run records; ignored
@@ -110,6 +110,58 @@ planned config
 An experiment config becomes immutable after a result is recorded. Change a seed, dataset, model, or training choice by creating the next `exp-###.yml`, not by rewriting history. Failed and interrupted runs remain useful local diagnostics but do not become research claims.
 
 Every run contains the resolved config, source revision and dirty state, command, environment identity, seed and determinism flags, dataset/model identities, canonical metrics, result, and validation state. Secret values are never part of this record.
+
+## See training progress
+
+Long operations report progress on `stderr`, leaving the final run path or JSON on `stdout` safe
+for scripts. The default `auto` mode uses nested epoch and batch bars in an interactive terminal;
+CI and detached Runpod logs receive an append-only line every 5% or 30 seconds without ANSI
+control codes. Only DDP rank zero renders progress.
+
+<!-- sync:start progress-commands -->
+```bash
+uv run mltrain train --config configs/mnist-baseline/exp-004.yml --progress auto
+uv run mltrain evaluate --config configs/mnist-baseline/exp-001.yml \
+  --checkpoint checkpoints/model.pt --progress plain
+uv run mltrain train --config configs/mnist-baseline/exp-004.yml --progress off
+```
+<!-- sync:end progress-commands -->
+
+Progress is runtime presentation, not experiment intent: it is not stored as profile evidence and
+does not require a new experiment. Bounded operations show a percentage; setup, loader creation,
+checkpoint writes, and hashing show started/completed/failed stage messages with elapsed time.
+
+## Profile a run
+
+Profiling is opt-in experiment intent. `exp-004` keeps the verified CPU recipe and enables only:
+
+<!-- sync:start profiling-config -->
+```yaml
+profiling:
+  enabled: true
+  sample_interval_seconds: 1.0
+```
+<!-- sync:end profiling-config -->
+
+The run writes rank-local evidence without mixing high-frequency resource samples into
+`metrics.jsonl`:
+
+```text
+runs/<line>/<experiment>/<run-id>/profile/
+├── stages.rank-000.jsonl
+├── resources.rank-000.jsonl
+└── summary.rank-000.json
+```
+
+Stage timing covers setup, data-loader/model construction, every train and validation epoch,
+checkpoint writes, provenance hashing, and finalization. Once per second, the profiler samples
+process CPU/RSS and, on rank zero, system CPU/RAM. CUDA runs also query every visible NVIDIA GPU's
+utilization, VRAM, and power through `nvidia-smi`; CPU records `not_requested`, while MPS records
+GPU utilization as `unsupported` rather than zero.
+
+Profiler failure does not abort training, but it marks profiling degraded and keeps an explicitly
+profiled run exploratory. Profiling measures where time and resources went; it is not a deadline,
+automatic cancellation, three-hour timer, or Runpod cost watchdog.
 
 ## Start your own project
 
@@ -227,6 +279,10 @@ queries Runpod's v2 Pod API, treats either `ssh.direct` or `ssh.proxy` as ready,
 first, and falls back to Basic SSH without waiting for a public IP. Direct transfers use rsync;
 proxy transfers use a PTY-safe base64 stream and verify SHA-256 before an atomic move.
 
+SSH readiness and direct/proxy transfers use the same progress renderer. `auto` therefore produces
+plain throttled lines in detached controller logs; pass the global `--progress off` option before
+the subcommand only when quiet machine output is required.
+
 <!-- sync:start runpod-transport-commands -->
 ```bash
 uv run mltrain-runpod endpoint "$POD_ID"
@@ -243,7 +299,8 @@ constructs it. Basic SSH does not support
 SCP, SFTP, rsync, or port forwarding, and its default transfer limit here is 512 MiB. Keep datasets
 and large checkpoints in images, object storage, or a network volume. Pod creation, detached
 training, deadlines, and deletion remain the responsibility of a project controller following the
-`runpod-training` skill.
+`runpod-training` skill. When profiling is enabled, retrieve the complete run including `profile/`
+before deleting the Pod.
 
 ## Support matrix
 
@@ -259,6 +316,7 @@ training, deadlines, and deletion remain the responsibility of a project control
 | Single-node DDP | Linux amd64, 2× NVIDIA GPU | Supported contract / manual-unverified | No DDP run in this repository |
 | Apptainer / SIF | Linux amd64 | Supported contract / manual-unverified | Apptainer unavailable during bootstrap |
 | Runpod Pod SSH transport | Direct TCP or Basic SSH proxy | Contract-tested / live proxy unverified | Fallback and PTY transfer unit tests; no promoted GPU run |
+| Run-local profiling | CPU/process/system + NVIDIA via `nvidia-smi` | CPU smoke / NVIDIA manual-unverified | Real MNIST CPU-step smoke; mocked NVIDIA contract tests |
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 

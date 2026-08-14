@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import math
 from pathlib import Path
@@ -23,6 +24,7 @@ from ml_training_template.tracking import ResilientTracker
 from ml_training_template.training import mnist as training
 from ml_training_template.validate.mnist import validate_mnist_run
 from mltrain.contracts import RunContext
+from mltrain.progress import ProgressReporter
 
 
 def _raw_config() -> dict[str, Any]:
@@ -53,6 +55,28 @@ def test_cpu_forward_backward_uses_only_synthetic_data() -> None:
     assert math.isfinite(metrics["loss"])
     assert 0.0 <= metrics["accuracy"] <= 1.0
     assert not torch.equal(before, model.features[0].weight.detach())
+
+
+def test_epoch_batches_use_run_context_progress(tmp_path: Path) -> None:
+    model = MNISTCNN(hidden_channels=4)
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 1, 28, 28), torch.tensor([0, 1, 2, 3])),
+        batch_size=2,
+    )
+    output = io.StringIO()
+    context = RunContext(run_id="run", run_dir=tmp_path, command=["train"])
+    context.attach_progress_sink(ProgressReporter("plain", stream=output))
+
+    training._run_epoch(
+        model,
+        loader,
+        torch.device("cpu"),
+        optimizer=None,
+        context=context,
+        description="validation 1/1",
+    )
+
+    assert "validation 1/1: completed 2 batch" in output.getvalue()
 
 
 def test_deterministic_split_preserves_exact_indices() -> None:

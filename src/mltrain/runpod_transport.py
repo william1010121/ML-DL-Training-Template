@@ -25,7 +25,9 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from mltrain.progress import ProgressMode, ProgressReporter
 
 API_ROOT = "https://api.runpod.io"
 DEFAULT_PROXY_TRANSFER_LIMIT = 512 * 1024 * 1024
@@ -152,18 +154,25 @@ def wait_for_ssh(
     api_key: str | None = None,
     timeout: float = 300,
     interval: float = 3,
+    progress: ProgressReporter | None = None,
 ) -> tuple[SshEndpoint, ...]:
     """Poll until either direct or Basic SSH is available."""
 
-    deadline = time.monotonic() + timeout
-    while True:
-        pod = fetch_pod(pod_id, api_key=api_key)
-        endpoints = ssh_endpoints(pod)
-        if endpoints:
-            return endpoints
-        if time.monotonic() >= deadline:
-            raise RunpodTransportError("timed out waiting for a Runpod SSH endpoint")
-        time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+    reporter = progress or ProgressReporter("off")
+    started = time.monotonic()
+    deadline = started + timeout
+    with reporter.task(
+        total=max(1, int(timeout)), description="Runpod SSH readiness", unit="second"
+    ) as task:
+        while True:
+            pod = fetch_pod(pod_id, api_key=api_key)
+            endpoints = ssh_endpoints(pod)
+            task.update(int(time.monotonic() - started))
+            if endpoints:
+                return endpoints
+            if time.monotonic() >= deadline:
+                raise RunpodTransportError("timed out waiting for a Runpod SSH endpoint")
+            time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
 
 
 def _identity_arguments(identity: Path | None) -> list[str]:
@@ -413,6 +422,74 @@ def _rsync_transport(endpoint: SshEndpoint, identity: Path | None) -> str:
     return shlex.join(command[:-2])
 
 
+def _run_rsync(
+    command: Sequence[str],
+    *,
+    progress: ProgressReporter,
+    total_bytes: int,
+    description: str,
+    timeout: float,
+) -> tuple[int, str]:
+    """Relay rsync progress2 percentages without leaking its control characters."""
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+    except OSError as error:
+        raise RunpodTransportError("direct Runpod rsync failed to start") from error
+    if process.stdout is None:
+        process.kill()
+        process.wait()
+        raise RunpodTransportError("direct Runpod rsync output pipe is unavailable")
+
+    deadline = time.monotonic() + timeout
+    output = bytearray()
+    parse_tail = b""
+    percent_pattern = re.compile(rb"(?:^|\s)(\d{1,3})%")
+    try:
+        with progress.task(
+            total=total_bytes, description=description, unit="byte"
+        ) as task:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                readable, _, _ = select.select(
+                    [process.stdout.fileno()], [], [], min(0.2, remaining)
+                )
+                if readable:
+                    chunk = os.read(process.stdout.fileno(), 65536)
+                    if chunk:
+                        output.extend(chunk)
+                        if len(output) > 4096:
+                            del output[:-4096]
+                        parse_chunk = parse_tail + chunk
+                        for match in percent_pattern.finditer(parse_chunk):
+                            percent = min(100, int(match.group(1)))
+                            task.update(int(total_bytes * percent / 100))
+                        parse_tail = parse_chunk[-32:]
+                    elif process.poll() is not None:
+                        break
+                elif process.poll() is not None:
+                    tail = os.read(process.stdout.fileno(), 65536)
+                    output.extend(tail)
+                    if len(output) > 4096:
+                        del output[:-4096]
+                    break
+            returncode = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+            if returncode == 0:
+                task.update(total_bytes)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        raise RunpodTransportError("direct Runpod rsync did not complete") from error
+    return returncode, output[-2000:].decode("utf-8", errors="replace")
+
+
 def _direct_upload(
     endpoint: SshEndpoint,
     source: Path,
@@ -421,6 +498,7 @@ def _direct_upload(
     *,
     identity: Path | None,
     timeout: float,
+    progress: ProgressReporter,
 ) -> None:
     temporary = f"{remote}.mltrain-{digest}.part"
     destination = f"{endpoint.username}@{endpoint.host}:{temporary}"
@@ -429,21 +507,24 @@ def _direct_upload(
         "-a",
         "--partial",
         "--append-verify",
+        "--info=progress2",
+        "--outbuf=L",
         "--protect-args",
         "-e",
         _rsync_transport(endpoint, identity),
         str(source),
         destination,
     ]
-    try:
-        process = subprocess.run(
-            command, text=True, capture_output=True, timeout=timeout, check=False
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise RunpodTransportError("direct Runpod rsync upload failed to start") from error
-    if process.returncode:
+    returncode, output = _run_rsync(
+        command,
+        progress=progress,
+        total_bytes=source.stat().st_size,
+        description="Runpod direct upload",
+        timeout=timeout,
+    )
+    if returncode:
         raise RunpodTransportError(
-            f"direct Runpod rsync upload failed: {(process.stderr or process.stdout).strip()}"
+            f"direct Runpod rsync upload failed: {output.strip()}"
         )
     quoted_remote = shlex.quote(remote)
     quoted_temporary = shlex.quote(temporary)
@@ -477,6 +558,7 @@ def _proxy_upload(
     *,
     identity: Path | None,
     timeout: float,
+    progress: ProgressReporter,
 ) -> None:
     session = _ProxySession(endpoint, identity, timeout)
     script_delimiter = f"__MLTRAIN_SCRIPT_{session.token}__"
@@ -502,8 +584,16 @@ def _proxy_upload(
             ]
         ).encode()
         session.write(header)
-        with source.open("rb") as stream:
-            base64.encode(stream, session.stdin)
+        completed = 0
+        with progress.task(
+            total=source.stat().st_size,
+            description="Runpod proxy upload",
+            unit="byte",
+        ) as task, source.open("rb") as stream:
+            while chunk := stream.read(48 * 1024):
+                session.write(base64.b64encode(chunk) + b"\n")
+                completed += len(chunk)
+                task.update(completed)
         footer = "\n".join(
             [
                 data_delimiter,
@@ -522,7 +612,7 @@ def _proxy_upload(
         returncode, output = session.finish(done)
     except OSError as error:
         session.abort()
-        raise RunpodTransportError("Runpod proxy download stream failed") from error
+        raise RunpodTransportError("Runpod proxy upload stream failed") from error
     except BaseException:
         session.abort()
         raise
@@ -540,6 +630,7 @@ def upload_file(
     identity: Path | None = None,
     timeout: float = 900,
     max_proxy_bytes: int = DEFAULT_PROXY_TRANSFER_LIMIT,
+    progress: ProgressReporter | None = None,
 ) -> SshEndpoint:
     """Upload atomically, preferring resumable direct rsync and falling back to proxy."""
 
@@ -548,13 +639,21 @@ def upload_file(
     if not source.is_file() or source.is_symlink():
         raise ValueError("upload source must be a regular non-symlink file")
     source = source.resolve()
-    digest = _sha256(source)
+    reporter = progress or ProgressReporter("off")
+    with reporter.stage("source/checksum"):
+        digest = _sha256(source)
     errors: list[str] = []
     for endpoint in endpoints:
         try:
             if endpoint.mode == "direct":
                 _direct_upload(
-                    endpoint, source, remote, digest, identity=identity, timeout=timeout
+                    endpoint,
+                    source,
+                    remote,
+                    digest,
+                    identity=identity,
+                    timeout=timeout,
+                    progress=reporter,
                 )
             else:
                 if source.stat().st_size > max_proxy_bytes:
@@ -562,7 +661,13 @@ def upload_file(
                         f"file exceeds proxy transfer limit of {max_proxy_bytes} bytes"
                     )
                 _proxy_upload(
-                    endpoint, source, remote, digest, identity=identity, timeout=timeout
+                    endpoint,
+                    source,
+                    remote,
+                    digest,
+                    identity=identity,
+                    timeout=timeout,
+                    progress=reporter,
                 )
             return endpoint
         except RunpodTransportError as error:
@@ -618,6 +723,7 @@ def _direct_download(
     identity: Path | None,
     timeout: float,
     max_bytes: int,
+    progress: ProgressReporter,
 ) -> None:
     marker = f"__MLTRAIN_META_{uuid.uuid4().hex}__"
     result = run_remote(
@@ -638,18 +744,24 @@ def _direct_download(
             "-a",
             "--partial",
             "--append-verify",
+            "--info=progress2",
+            "--outbuf=L",
             "--protect-args",
             "-e",
             _rsync_transport(endpoint, identity),
             f"{endpoint.username}@{endpoint.host}:{remote}",
             str(temporary),
         ]
-        process = subprocess.run(
-            command, text=True, capture_output=True, timeout=timeout, check=False
+        returncode, output = _run_rsync(
+            command,
+            progress=progress,
+            total_bytes=size,
+            description="Runpod direct download",
+            timeout=timeout,
         )
-        if process.returncode:
+        if returncode:
             raise RunpodTransportError(
-                f"direct Runpod rsync download failed: {(process.stderr or process.stdout).strip()}"
+                f"direct Runpod rsync download failed: {output.strip()}"
             )
         _finish_download(temporary, destination, digest, size)
     finally:
@@ -664,6 +776,7 @@ def _proxy_download(
     identity: Path | None,
     timeout: float,
     max_bytes: int,
+    progress: ProgressReporter,
 ) -> None:
     session = _ProxySession(endpoint, identity, timeout)
     script_delimiter = f"__MLTRAIN_SCRIPT_{session.token}__"
@@ -702,7 +815,10 @@ def _proxy_download(
         if metadata_line is None:
             raise RunpodTransportError("Runpod proxy returned no file metadata")
         digest, size = _parse_metadata(metadata_line, metadata_marker, max_bytes)
-        with temporary.open("wb") as stream:
+        completed = 0
+        with progress.task(
+            total=size, description="Runpod proxy download", unit="byte"
+        ) as task, temporary.open("wb") as stream:
             while True:
                 line = session.line()
                 if line is None:
@@ -710,9 +826,12 @@ def _proxy_download(
                 if line == data_end:
                     break
                 try:
-                    stream.write(base64.b64decode(line, validate=True))
+                    chunk = base64.b64decode(line, validate=True)
                 except ValueError as error:
                     raise RunpodTransportError("Runpod proxy returned invalid base64") from error
+                stream.write(chunk)
+                completed += len(chunk)
+                task.update(completed)
         returncode, output = session.finish(done)
         if returncode:
             raise RunpodTransportError(
@@ -734,11 +853,13 @@ def download_file(
     identity: Path | None = None,
     timeout: float = 900,
     max_bytes: int = DEFAULT_PROXY_TRANSFER_LIMIT,
+    progress: ProgressReporter | None = None,
 ) -> SshEndpoint:
     """Download and verify, preferring direct rsync and falling back to Basic SSH."""
 
     remote = _remote_path(remote)
     destination = destination.expanduser().resolve()
+    reporter = progress or ProgressReporter("off")
     errors: list[str] = []
     for endpoint in endpoints:
         try:
@@ -750,6 +871,7 @@ def download_file(
                     identity=identity,
                     timeout=timeout,
                     max_bytes=max_bytes,
+                    progress=reporter,
                 )
             else:
                 _proxy_download(
@@ -759,6 +881,7 @@ def download_file(
                     identity=identity,
                     timeout=timeout,
                     max_bytes=max_bytes,
+                    progress=reporter,
                 )
             return endpoint
         except (RunpodTransportError, OSError) as error:
@@ -770,6 +893,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mltrain-runpod", description=__doc__)
     parser.add_argument("--identity", type=Path)
     parser.add_argument("--wait-seconds", type=float, default=300)
+    parser.add_argument("--progress", choices=("auto", "plain", "off"), default="auto")
     commands = parser.add_subparsers(dest="command", required=True)
     endpoint = commands.add_parser("endpoint", help="show ordered SSH endpoint candidates")
     endpoint.add_argument("pod_id")
@@ -804,8 +928,9 @@ def _first_working_remote(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    progress = ProgressReporter(cast(ProgressMode, args.progress))
     try:
-        endpoints = wait_for_ssh(args.pod_id, timeout=args.wait_seconds)
+        endpoints = wait_for_ssh(args.pod_id, timeout=args.wait_seconds, progress=progress)
         if args.command == "endpoint":
             print(json.dumps([asdict(endpoint) for endpoint in endpoints], indent=2))
         elif args.command == "exec":
@@ -821,12 +946,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(result.stdout)
         elif args.command == "upload":
             endpoint = upload_file(
-                endpoints, args.source, args.remote, identity=args.identity
+                endpoints,
+                args.source,
+                args.remote,
+                identity=args.identity,
+                progress=progress,
             )
             print(json.dumps({"transport": endpoint.mode, "remote": args.remote}))
         elif args.command == "download":
             endpoint = download_file(
-                endpoints, args.remote, args.destination, identity=args.identity
+                endpoints,
+                args.remote,
+                args.destination,
+                identity=args.identity,
+                progress=progress,
             )
             print(json.dumps({"transport": endpoint.mode, "destination": str(args.destination)}))
     except (FileExistsError, OSError, RunpodTransportError, ValueError) as error:

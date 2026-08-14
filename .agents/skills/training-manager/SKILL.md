@@ -17,6 +17,8 @@ Preserve the repository's separation between experiment intent, runtime evidence
 6. Run the repository validators and focused tests after changes. Do not claim support without evidence.
 7. Read and follow `../runpod-training/SKILL.md` before changing Runpod Pod orchestration,
    SSH readiness, remote transfer, watchdog, or teardown behavior.
+8. Give long training, evaluation, download, hashing, waiting, and transfer operations honest
+   progress. Do not add fake progress bars to fast config, registry, research, or promotion writes.
 
 ## Deterministic operations
 

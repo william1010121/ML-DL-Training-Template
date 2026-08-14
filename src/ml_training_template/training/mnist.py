@@ -150,7 +150,15 @@ def _reduce_totals(
     return float(totals[0].item()), int(totals[1].item()), int(totals[2].item())
 
 
-def _run_epoch(model: Any, loader: Any, device: Any, *, optimizer: Any | None) -> dict[str, float]:
+def _run_epoch(
+    model: Any,
+    loader: Any,
+    device: Any,
+    *,
+    optimizer: Any | None,
+    context: RunContext | None = None,
+    description: str = "batches",
+) -> dict[str, float]:
     import torch
     from torch import nn
 
@@ -161,8 +169,20 @@ def _run_epoch(model: Any, loader: Any, device: Any, *, optimizer: Any | None) -
     correct = 0
     count = 0
 
+    batches = (
+        context.progress_iter(
+            loader,
+            total=len(loader),
+            description=description,
+            unit="batch",
+            position=1,
+            leave=False,
+        )
+        if context is not None
+        else iter(loader)
+    )
     with torch.set_grad_enabled(training):
-        for inputs, targets in loader:
+        for inputs, targets in batches:
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             if optimizer is not None:
@@ -200,31 +220,61 @@ def train_mnist(config: MNISTConfig, context: RunContext) -> RunResult:
             tracker.log_params(config.model_dump(mode="json"))
 
         with _distributed_runtime(config) as (rank, world_size, device):
-            train_loader, validation_loader, train_sampler = build_train_validation_loaders(
-                config,
-                rank=rank,
-                world_size=world_size,
-            )
-            raw_model = _model_from_config(config).to(device)
-            model = raw_model
-            if config.runtime.strategy == "ddp":
-                model = DistributedDataParallel(
-                    raw_model,
-                    device_ids=[device.index] if device.type == "cuda" else None,
+            with context.progress_stage("data/loaders"), context.profile_stage("data/loaders"):
+                train_loader, validation_loader, train_sampler = build_train_validation_loaders(
+                    config,
+                    rank=rank,
+                    world_size=world_size,
                 )
-            optimizer = torch.optim.AdamW(
-                model.parameters(),
-                lr=config.training.optimizer.learning_rate,
-                weight_decay=config.training.optimizer.weight_decay,
-            )
+            with context.progress_stage("model/build"), context.profile_stage("model/build"):
+                raw_model = _model_from_config(config).to(device)
+                model = raw_model
+                if config.runtime.strategy == "ddp":
+                    model = DistributedDataParallel(
+                        raw_model,
+                        device_ids=[device.index] if device.type == "cuda" else None,
+                    )
+                optimizer = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=config.training.optimizer.learning_rate,
+                    weight_decay=config.training.optimizer.weight_decay,
+                )
 
             best_metrics: dict[str, float] | None = None
             checkpoint = run_dir / "checkpoint.pt"
-            for epoch in range(1, config.training.epochs + 1):
+            epochs = context.progress_iter(
+                range(1, config.training.epochs + 1),
+                total=config.training.epochs,
+                description="training epochs",
+                unit="epoch",
+                position=0,
+                leave=True,
+            )
+            for epoch in epochs:
                 if train_sampler is not None:
                     train_sampler.set_epoch(epoch)
-                train_metrics = _run_epoch(model, train_loader, device, optimizer=optimizer)
-                validation_metrics = _run_epoch(model, validation_loader, device, optimizer=None)
+                with context.progress_stage("epoch/train", epoch=epoch), context.profile_stage(
+                    "epoch/train", epoch=epoch
+                ):
+                    train_metrics = _run_epoch(
+                        model,
+                        train_loader,
+                        device,
+                        optimizer=optimizer,
+                        context=context,
+                        description=f"train {epoch}/{config.training.epochs}",
+                    )
+                with context.progress_stage(
+                    "epoch/validation", epoch=epoch
+                ), context.profile_stage("epoch/validation", epoch=epoch):
+                    validation_metrics = _run_epoch(
+                        model,
+                        validation_loader,
+                        device,
+                        optimizer=None,
+                        context=context,
+                        description=f"validation {epoch}/{config.training.epochs}",
+                    )
                 epoch_metrics = {
                     "train/loss": train_metrics["loss"],
                     "train/accuracy": train_metrics["accuracy"],
@@ -240,7 +290,10 @@ def train_mnist(config: MNISTConfig, context: RunContext) -> RunResult:
                 ):
                     best_metrics = {**epoch_metrics, "best/epoch": float(epoch)}
                     if context.is_primary:
-                        torch.save(raw_model.state_dict(), checkpoint)
+                        with context.progress_stage(
+                            "checkpoint/write", epoch=epoch
+                        ), context.profile_stage("checkpoint/write", epoch=epoch):
+                            torch.save(raw_model.state_dict(), checkpoint)
 
             if best_metrics is None:
                 raise RuntimeError("training completed without an epoch result")
@@ -249,10 +302,13 @@ def train_mnist(config: MNISTConfig, context: RunContext) -> RunResult:
             data_sha256 = None
             model_sha256 = None
             if context.is_primary:
-                checkpoint_name = checkpoint.name
-                data_sha256 = sha256_tree(resolve_data_root(config.data.root) / "MNIST")
-                model_sha256 = sha256_file(checkpoint)
-                tracker.log_artifact(checkpoint, name="checkpoint")
+                with context.progress_stage("provenance/hash"), context.profile_stage(
+                    "provenance/hash"
+                ):
+                    checkpoint_name = checkpoint.name
+                    data_sha256 = sha256_tree(resolve_data_root(config.data.root) / "MNIST")
+                    model_sha256 = sha256_file(checkpoint)
+                    tracker.log_artifact(checkpoint, name="checkpoint")
         if context.is_primary:
             tracker.finish(status="completed")
         return RunResult(
@@ -284,23 +340,36 @@ def evaluate_mnist(config: MNISTConfig, checkpoint: Path, context: RunContext) -
         raise ValueError("evaluate uses a single process; set runtime.strategy=single")
     tracker = create_tracker(config.tracking.backend) if context.is_primary else NoOpTracker()
     try:
-        if checkpoint.is_symlink():
-            raise ValueError("evaluation checkpoint must not be a symlink")
-        archived_checkpoint = context.run_dir / "checkpoint.pt"
-        archived_sha256 = _archive_checkpoint(checkpoint, archived_checkpoint)
+        with context.progress_stage("checkpoint/load"), context.profile_stage("checkpoint/load"):
+            if checkpoint.is_symlink():
+                raise ValueError("evaluation checkpoint must not be a symlink")
+            archived_checkpoint = context.run_dir / "checkpoint.pt"
+            archived_sha256 = _archive_checkpoint(checkpoint, archived_checkpoint)
         _set_reproducibility(config)
         device = _resolve_device(config)
-        model = _model_from_config(config).to(device)
-        state = torch.load(archived_checkpoint, map_location=device, weights_only=True)
-        model.load_state_dict(state)
-        metrics = _run_epoch(model, build_test_loader(config), device, optimizer=None)
+        with context.progress_stage("model/build"), context.profile_stage("model/build"):
+            model = _model_from_config(config).to(device)
+            state = torch.load(archived_checkpoint, map_location=device, weights_only=True)
+            model.load_state_dict(state)
+        with context.progress_stage("data/loaders"), context.profile_stage("data/loaders"):
+            test_loader = build_test_loader(config)
+        with context.progress_stage("evaluate/test"), context.profile_stage("evaluate/test"):
+            metrics = _run_epoch(
+                model,
+                test_loader,
+                device,
+                optimizer=None,
+                context=context,
+                description="evaluate test",
+            )
         recorded = {"test/loss": metrics["loss"], "test/accuracy": metrics["accuracy"]}
         if context.is_primary:
             tracker.log_params(config.model_dump(mode="json"))
             context.log_metrics(0, recorded)
             tracker.log_metrics(recorded, step=0)
-        data_sha256 = sha256_tree(resolve_data_root(config.data.root) / "MNIST")
-        model_sha256 = archived_sha256
+        with context.progress_stage("provenance/hash"), context.profile_stage("provenance/hash"):
+            data_sha256 = sha256_tree(resolve_data_root(config.data.root) / "MNIST")
+            model_sha256 = archived_sha256
         if context.is_primary:
             tracker.finish(status="completed")
         return RunResult(

@@ -130,11 +130,24 @@ def _validate_promoted_artifact(
     errors: list[str],
 ) -> None:
     label = f"{line}/{experiment}"
+    try:
+        manifest_preview = _yaml(artifact_path / "manifest.json")
+    except (OSError, yaml.YAMLError) as exc:
+        errors.append(f"promoted artifact manifest is invalid: {label}: {exc}")
+        return
+    profiling = (
+        manifest_preview.get("profiling", {})
+        if isinstance(manifest_preview, Mapping)
+        else {}
+    )
+    expected_files = set(PROMOTED_FILES)
+    if isinstance(profiling, Mapping) and profiling.get("enabled") is True:
+        expected_files.add("profile-summary.json")
     actual = {path.name for path in artifact_path.iterdir()}
-    if actual != PROMOTED_FILES:
+    if actual != expected_files:
         errors.append(
             f"promoted artifact file set is invalid: {label}: "
-            f"expected {sorted(PROMOTED_FILES)}, got {sorted(actual)}"
+            f"expected {sorted(expected_files)}, got {sorted(actual)}"
         )
         return
     checksums: dict[str, str] = {}
@@ -144,11 +157,11 @@ def _validate_promoted_artifact(
             errors.append(f"promoted artifact checksum syntax is invalid: {label}")
             return
         digest, name = parts
-        if name in checksums or name not in PROMOTED_FILES - {"checksums.sha256"}:
+        if name in checksums or name not in expected_files - {"checksums.sha256"}:
             errors.append(f"promoted artifact checksum member is invalid: {label}: {name}")
             return
         checksums[name] = digest
-    expected_members = PROMOTED_FILES - {"checksums.sha256"}
+    expected_members = expected_files - {"checksums.sha256"}
     if set(checksums) != expected_members:
         errors.append(f"promoted artifact checksum set is incomplete: {label}")
     for name, digest in checksums.items():
@@ -180,6 +193,13 @@ def _validate_promoted_artifact(
     for field, value in expected.items():
         if summary.get(field) != value:
             errors.append(f"promoted artifact summary {field} is inconsistent: {label}")
+    if (
+        isinstance(profiling, Mapping)
+        and profiling.get("enabled") is True
+        and summary.get("profile_summary_sha256")
+        != _sha256(artifact_path / "profile-summary.json")
+    ):
+        errors.append(f"promoted artifact profile summary is inconsistent: {label}")
     run_pointer = entry.get("completed_run")
     if (
         not isinstance(run_pointer, str)

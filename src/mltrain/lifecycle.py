@@ -24,6 +24,8 @@ from mltrain.config import (
     validate_config_registration,
 )
 from mltrain.contracts import ExperimentConfig, ProjectAdapter, RunResult, ValidationResult
+from mltrain.profiling import RunProfiler, validate_profile_evidence
+from mltrain.progress import ProgressMode, ProgressReporter
 from mltrain.provenance import commit_exists, validate_run_id
 from mltrain.runtime import (
     cli_command,
@@ -166,17 +168,55 @@ def _validation(value: ValidationResult | Mapping[str, Any]) -> ValidationResult
     return value if isinstance(value, ValidationResult) else ValidationResult.model_validate(value)
 
 
-def execute(config_path: Path, kind: str, checkpoint: Path | None = None) -> Path:
+def execute(
+    config_path: Path,
+    kind: str,
+    checkpoint: Path | None = None,
+    *,
+    progress: ProgressMode = "auto",
+) -> Path:
     adapter = load_adapter()
     config = load_config(config_path, adapter)
     ensure_device(config)
     flags = configure_reproducibility(config)
     context, manifest = create_run(config, config_path, cli_command(), kind)
-    if context.is_primary:
-        reproducibility = cast(dict[str, Any], manifest["reproducibility"])
-        reproducibility.update(flags)
-        write_manifest(context.run_dir, manifest)
+    context.attach_progress_sink(ProgressReporter(progress, rank=context.rank))
+    profiler: RunProfiler | None = None
+    profiling = cast(
+        dict[str, Any],
+        manifest.setdefault(
+            "profiling",
+            {
+                "enabled": config.profiling.enabled,
+                "schema_version": 1,
+                "sample_interval_seconds": config.profiling.sample_interval_seconds,
+                "status": "pending" if config.profiling.enabled else "disabled",
+                "degraded": False,
+                "files": {},
+            },
+        ),
+    )
+    if config.profiling.enabled:
+        try:
+            profiler = RunProfiler(
+                context.run_dir,
+                rank=context.rank,
+                is_primary=context.is_primary,
+                device=config.runtime.device,
+                interval_seconds=config.profiling.sample_interval_seconds,
+            )
+            profiler.start()
+            context.attach_profile_sink(profiler)
+            profiling["status"] = "running"
+        except Exception:
+            profiler = None
+            profiling.update({"status": "degraded", "degraded": True, "files": {}})
     try:
+        with context.progress_stage("lifecycle/setup"), context.profile_stage("lifecycle/setup"):
+            reproducibility = cast(dict[str, Any], manifest["reproducibility"])
+            reproducibility.update(flags)
+            if context.is_primary:
+                write_manifest(context.run_dir, manifest)
         raw = (
             adapter.train(config, context)
             if kind == "train"
@@ -184,25 +224,39 @@ def execute(config_path: Path, kind: str, checkpoint: Path | None = None) -> Pat
         )
         result = _result(raw)
         if context.is_primary:
-            result_path = context.run_dir / "result.json"
-            result_path.write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
-            provenance = cast(dict[str, Any], manifest["provenance"])
-            if result.data_sha256:
-                provenance["data_sha256"] = result.data_sha256
-            if result.model_sha256:
-                provenance["model_sha256"] = result.model_sha256
-            tracking = cast(dict[str, Any], manifest["tracking"])
-            tracking["degraded"] = result.tracking_degraded
-            manifest["status"] = "succeeded"
-            manifest["finished_at"] = datetime.now(UTC).isoformat()
-            manifest["result_sha256"] = sha256_file(result_path)
-            write_manifest(context.run_dir, manifest)
+            with context.progress_stage("lifecycle/finalize"), context.profile_stage(
+                "lifecycle/finalize"
+            ):
+                result_path = context.run_dir / "result.json"
+                result_path.write_text(
+                    result.model_dump_json(indent=2) + "\n", encoding="utf-8"
+                )
+                provenance = cast(dict[str, Any], manifest["provenance"])
+                if result.data_sha256:
+                    provenance["data_sha256"] = result.data_sha256
+                if result.model_sha256:
+                    provenance["model_sha256"] = result.model_sha256
+                tracking = cast(dict[str, Any], manifest["tracking"])
+                tracking["degraded"] = result.tracking_degraded
+                manifest["status"] = "succeeded"
+                manifest["finished_at"] = datetime.now(UTC).isoformat()
+                manifest["result_sha256"] = sha256_file(result_path)
+                write_manifest(context.run_dir, manifest)
     except BaseException as error:
         if context.is_primary:
             manifest["status"] = "failed" if isinstance(error, Exception) else "interrupted"
             manifest["finished_at"] = datetime.now(UTC).isoformat()
             write_manifest(context.run_dir, manifest)
         raise
+    finally:
+        if profiler is not None:
+            try:
+                profiler.stop()
+                profiling.update(profiler.evidence())
+            except Exception:
+                profiling.update({"status": "degraded", "degraded": True})
+        if context.is_primary:
+            write_manifest(context.run_dir, manifest)
     return context.run_dir
 
 
@@ -384,6 +438,14 @@ def validate_run(run_dir: Path) -> dict[str, Any]:
     )
     checks["canonical_metrics_present"] = metrics_present
     checks["canonical_metrics_match"] = metrics_present and metrics_primary == primary_value
+    checks.update(
+        validate_profile_evidence(
+            resolved_run,
+            manifest,
+            enabled=config.profiling.enabled,
+            interval_seconds=config.profiling.sample_interval_seconds,
+        )
+    )
     checkpoint_value = result.get("checkpoint")
     if isinstance(checkpoint_value, str) and checkpoint_value:
         checkpoint = Path(checkpoint_value)
@@ -563,6 +625,8 @@ def _verify_promoted_artifact(destination: Path, decision: str) -> None:
     summary_path = destination / "summary.json"
     if not checksums.is_file() or not summary_path.is_file():
         raise ValueError("registered promoted artifact is incomplete")
+    manifest = _json(destination / "manifest.json")
+    profiling = cast(dict[str, Any], manifest.get("profiling", {}))
     required = {
         "manifest.json",
         "result.json",
@@ -570,6 +634,8 @@ def _verify_promoted_artifact(destination: Path, decision: str) -> None:
         "resolved_config.yml",
         "summary.json",
     }
+    if profiling.get("enabled") is True:
+        required.add("profile-summary.json")
     expected: dict[str, str] = {}
     for line in checksums.read_text(encoding="utf-8").splitlines():
         parts = line.split("  ", 1)
@@ -592,11 +658,14 @@ def _verify_promoted_artifact(destination: Path, decision: str) -> None:
         raise ValueError("experiment was already promoted with a different decision")
     if summary.get("result_sha256") != sha256_file(destination / "result.json"):
         raise ValueError("promoted artifact summary result hash is invalid")
-    manifest = _json(destination / "manifest.json")
     if summary.get("config_sha256") != cast(dict[str, Any], manifest.get("config", {})).get(
         "source_sha256"
     ):
         raise ValueError("promoted artifact summary config hash is invalid")
+    if profiling.get("enabled") is True:
+        profile_summary = destination / "profile-summary.json"
+        if summary.get("profile_summary_sha256") != sha256_file(profile_summary):
+            raise ValueError("promoted artifact profile summary hash is invalid")
 
 
 def _safe_artifact_destination(
@@ -685,9 +754,15 @@ def promote_run(run_dir: Path, decision: str) -> Path:
 
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(f"promotion destination already exists: {destination}")
-    names = ("manifest.json", "result.json", "validation.json", "resolved_config.yml")
+    names = ["manifest.json", "result.json", "validation.json", "resolved_config.yml"]
+    profiling = cast(dict[str, Any], manifest.get("profiling", {}))
+    if profiling.get("enabled") is True:
+        source_summary = run_dir.resolve() / "profile/summary.rank-000.json"
+        _scan_promotable(source_summary)
+        names.append("profile-summary.json")
     for name in names:
-        _scan_promotable(run_dir.resolve() / name)
+        if name != "profile-summary.json":
+            _scan_promotable(run_dir.resolve() / name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination = _safe_artifact_destination(
         root, line, experiment, str(manifest["run_id"])
@@ -695,7 +770,12 @@ def promote_run(run_dir: Path, decision: str) -> Path:
     stage = Path(tempfile.mkdtemp(prefix=".promote-", dir=destination.parent))
     try:
         for name in names:
-            shutil.copy2(run_dir.resolve() / name, stage / name)
+            source_path = (
+                run_dir.resolve() / "profile/summary.rank-000.json"
+                if name == "profile-summary.json"
+                else run_dir.resolve() / name
+            )
+            shutil.copy2(source_path, stage / name)
         source = cast(dict[str, Any], manifest["source"])
         summary = {
             "schema_version": 1,
@@ -710,6 +790,8 @@ def promote_run(run_dir: Path, decision: str) -> Path:
             },
             "decision": decision,
         }
+        if profiling.get("enabled") is True:
+            summary["profile_summary_sha256"] = sha256_file(stage / "profile-summary.json")
         (stage / "summary.json").write_text(
             json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )

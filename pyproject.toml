@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 dependencies = [
+  "psutil>=7,<8",
   "pydantic>=2.12,<3",
   "PyYAML>=6.0.2,<7",
+  "tqdm>=4.67,<5",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +29,9 @@ dev = [
   "mypy>=1.17,<2",
   "pytest>=8.4,<9",
   "ruff>=0.12,<1",
+  "types-psutil>=7,<8",
   "types-PyYAML>=6.0.12.20250516",
+  "types-tqdm>=4.67,<5",
 ]
 
 [tool.hatch.build.targets.wheel]

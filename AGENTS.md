@@ -8,6 +8,15 @@ Before changing source code, training or validation behavior, configs, experimen
 
 Before adding or changing metrics, tracker behavior, W&B, MLflow, TensorBoard, or any logging adapter, also read and follow `.agents/skills/add-experiment-logging/SKILL.md`. Canonical local logs must remain available when an external tracker is absent or fails.
 
+Treat stage timing and CPU/GPU sampling as run-local profiling evidence. Keep raw profile logs under
+the ignored run directory, use stable stage names, and never describe a profiler as a training
+deadline, cancellation timer, or cost watchdog.
+
+Give long-running training, evaluation, downloads, hashing, endpoint waits, and transfers visible
+progress. Use dynamic bars only on a TTY; detached and CI logs must use throttled append-only text
+without ANSI codes. Write progress to stderr, keep it out of experiment intent/evidence, render DDP
+progress on rank zero only, and do not add fake bars to fast atomic operations.
+
 Before adding or changing Runpod Pod creation, SSH readiness, source or artifact transfer,
 detached execution, cost watchdogs, or teardown, also read and follow
 `.agents/skills/runpod-training/SKILL.md`. Basic SSH proxy availability must prevent public-IP-only
@@ -31,7 +40,7 @@ The commit recorded in research is the source commit that produced the run, not 
 
 ## Repository hygiene
 
-- Never commit dataset bytes, model weights, checkpoints, complete runs, SIF images, cache files, `.env`, credentials, or generated tracker directories.
+- Never commit dataset bytes, model weights, checkpoints, complete runs, raw profile logs, SIF images, cache files, `.env`, credentials, or generated tracker directories.
 - Track only source, complete configs, documentation, small tests/fixtures, and promoted metadata or small figures in `artifacts/`.
 - Read credentials only from environment variables. Record names when needed, never values.
 - Treat tracked files larger than 10 MiB or common secret patterns as validation failures unless a narrow reviewed allowlist says otherwise.

@@ -19,6 +19,12 @@ research_lines:
         config_sha256: null
         promoted_artifact: null
         status: planned
+      exp-004:
+        config: configs/mnist-baseline/exp-004.yml
+        status: planned
+        config_sha256: null
+        completed_run: null
+        promoted_artifact: null
     goal: Establish the smallest reproducible MNIST training baseline across the supported
       runtime modes.
     status: promoted

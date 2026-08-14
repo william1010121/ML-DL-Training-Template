@@ -40,6 +40,7 @@ REQUIRED_TEMPLATE_PATHS = (
     "configs/mnist-baseline/exp-001.yml",
     "configs/mnist-baseline/exp-002.yml",
     "configs/mnist-baseline/exp-003.yml",
+    "configs/mnist-baseline/exp-004.yml",
     "scripts/download_mnist.py",
     "scripts/smoke_cpu.py",
     "scripts/check_readme_sync.py",
@@ -183,7 +184,8 @@ def initialized_readme(project_name: str, package_name: str, *, chinese: bool) -
             f"2. 實作 `{package_name}.project:adapter`, 再於 `[tool.mltrain]` 設定 `adapter`。",
             "3. 執行 `uv lock` 與 `uv sync --extra cpu`。",
             "4. 用 training-manager 建立 research line 與通過 project schema 的 config。",
-            "5. 執行測試後再開始訓練。沒有 validated evidence 不更新支援聲明。",
+            "5. 長操作使用 RunContext progress。TTY 顯示 bar、detached log 使用節流文字。",
+            "6. 執行測試後再開始訓練。沒有 validated evidence 不更新支援聲明。",
             "",
             "完整 contract 請見 `AGENTS.md` 與 `.agents/skills/`。",
         ]
@@ -201,7 +203,8 @@ def initialized_readme(project_name: str, package_name: str, *, chinese: bool) -
         f"2. Implement `{package_name}.project:adapter` and configure `[tool.mltrain]`.",
         "3. Run `uv lock` and `uv sync --extra cpu`.",
         "4. Use training-manager to create a research line and a schema-valid config.",
-        "5. Run tests before training; require validated evidence for support claims.",
+        "5. Use RunContext progress for long work: bars on a TTY, throttled detached-log text.",
+        "6. Run tests before training; require validated evidence for support claims.",
         "",
         "See `AGENTS.md` and `.agents/skills/` for the contract.",
     ]

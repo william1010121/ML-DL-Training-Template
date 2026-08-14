@@ -177,6 +177,14 @@ def create_run(
             **environment,
         },
         "tracking": {"backend": config.tracking.backend, "degraded": False},
+        "profiling": {
+            "enabled": config.profiling.enabled,
+            "schema_version": 1,
+            "sample_interval_seconds": config.profiling.sample_interval_seconds,
+            "status": "pending" if config.profiling.enabled else "disabled",
+            "degraded": False,
+            "files": {},
+        },
     }
     if rank == 0:
         write_manifest(run_dir, manifest)

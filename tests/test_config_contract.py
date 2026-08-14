@@ -70,6 +70,8 @@ def test_project_model_strictly_loads_complete_config(tmp_path: Path) -> None:
     assert isinstance(config, FakeConfig)
     assert config.experiment.id == "exp-001"
     assert config.data.batch_size == 16
+    assert config.profiling.enabled is False
+    assert config.profiling.sample_interval_seconds == 1.0
 
 
 @pytest.mark.parametrize(
@@ -87,6 +89,12 @@ def test_project_model_strictly_loads_complete_config(tmp_path: Path) -> None:
         (
             lambda value: value["output"].update({"root": "/tmp/runs"}),  # type: ignore[union-attr]
             "exactly 'runs'",
+        ),
+        (
+            lambda value: value.update(
+                {"profiling": {"enabled": True, "sample_interval_seconds": 0.1}}
+            ),
+            "greater than or equal to 0.2",
         ),
     ],
 )
@@ -108,9 +116,17 @@ def test_bundled_experiment_matrix_uses_project_strict_schema() -> None:
     root = Path(__file__).resolve().parents[1]
     configs = sorted((root / "configs/mnist-baseline").glob("exp-*.yml"))
     loaded = [load_config(path, mnist_adapter) for path in configs]
-    assert [config.experiment.id for config in loaded] == ["exp-001", "exp-002", "exp-003"]
+    assert [config.experiment.id for config in loaded] == [
+        "exp-001",
+        "exp-002",
+        "exp-003",
+        "exp-004",
+    ]
     assert [(config.runtime.device, config.runtime.strategy) for config in loaded] == [
         ("cpu", "single"),
         ("cuda", "single"),
         ("cuda", "ddp"),
+        ("cpu", "single"),
     ]
+    assert loaded[-1].profiling.enabled is True
+    assert loaded[-1].profiling.sample_interval_seconds == 1.0

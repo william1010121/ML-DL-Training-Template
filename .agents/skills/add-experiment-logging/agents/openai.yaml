@@ -1,6 +1,6 @@
 interface:
   display_name: "Add Experiment Logging"
-  short_description: "Add optional experiment tracking without coupling"
-  default_prompt: "Use $add-experiment-logging to add a local-first tracking adapter."
+  short_description: "Add local-first tracking, profiling, or progress"
+  default_prompt: "Use $add-experiment-logging to add failure-tolerant local-first observability."
 policy:
   allow_implicit_invocation: true

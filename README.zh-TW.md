@@ -77,7 +77,7 @@ Promotion 只會把可 review 的小型 metadata 寫進 `artifacts/`，不會提
 │   ├── registry.yml               # 實驗生命週期與證據指標
 │   └── mnist-baseline/
 │       ├── research.md            # 這條研究線的目標與精簡結果
-│       └── exp-001.yml … exp-003.yml
+│       └── exp-001.yml … exp-004.yml
 ├── datasets/                      # 本機資料；內容忽略
 ├── checkpoints/                   # 本機／預訓練權重；內容忽略
 ├── runs/                          # 完整本機 run；忽略
@@ -110,6 +110,55 @@ planned config
 實驗一旦入帳，config 就不可再改。Seed、dataset、model 或訓練策略有變化，請建立下一個 `exp-###.yml`，不要改寫歷史。失敗或中斷的 run 可以保留作為本機診斷，但不會成為研究結論。
 
 每次 run 都會記錄 resolved config、source revision 與 dirty 狀態、command、環境 identity、seed、determinism flags、資料／模型 identity、canonical metrics、result 與 validation 狀態。Secret value 永遠不會寫進紀錄。
+
+## 查看訓練進度
+
+長操作一律把進度寫到 `stderr`，因此 scripts 仍可安全讀取 `stdout` 的最終 run path 或
+JSON。預設 `auto` 在互動終端顯示 epoch＋batch 巢狀進度條；CI 與 Runpod detached log
+改成每 5% 或 30 秒追加一行、不含 ANSI 控制碼的文字。DDP 只由 rank zero 顯示進度。
+
+<!-- sync:start progress-commands -->
+```bash
+uv run mltrain train --config configs/mnist-baseline/exp-004.yml --progress auto
+uv run mltrain evaluate --config configs/mnist-baseline/exp-001.yml \
+  --checkpoint checkpoints/model.pt --progress plain
+uv run mltrain train --config configs/mnist-baseline/exp-004.yml --progress off
+```
+<!-- sync:end progress-commands -->
+
+Progress 只是 runtime 畫面，不是 experiment intent；它不會寫成 profile evidence，也不需要
+建立新 experiment。有可靠 total 的工作顯示百分比；setup、loader 建立、checkpoint 寫入與
+hashing 則顯示 started/completed/failed 和 elapsed time。
+
+## Profile 一次 run
+
+Profiling 是明確的 experiment intent。`exp-004` 保留已驗證的 CPU recipe，只開啟：
+
+<!-- sync:start profiling-config -->
+```yaml
+profiling:
+  enabled: true
+  sample_interval_seconds: 1.0
+```
+<!-- sync:end profiling-config -->
+
+Run 會寫 rank-local evidence，不把高頻 resource samples 混進 `metrics.jsonl`：
+
+```text
+runs/<line>/<experiment>/<run-id>/profile/
+├── stages.rank-000.jsonl
+├── resources.rank-000.jsonl
+└── summary.rank-000.json
+```
+
+Stage timing 包含 setup、data loader/model 建立、每個 train/validation epoch、checkpoint、
+provenance hash 與 finalize。Profiler 每秒取樣 process CPU/RSS；rank zero 另記 system CPU/RAM。
+CUDA run 透過 `nvidia-smi` 查詢每張可見 NVIDIA GPU 的 utilization、VRAM 與 power；CPU 寫
+`not_requested`，MPS GPU utilization 則明確寫 `unsupported`，不製造假的零使用量。
+
+Profiler 失敗不會中止 training，但會標記 degraded，使明確要求 profiling 的 run 保持
+exploratory。它只量測時間與資源，不是 deadline、自動取消、三小時 timer 或 Runpod cost
+watchdog。
 
 ## 建立自己的專案
 
@@ -227,6 +276,10 @@ Pod。它讀取 Runpod v2 Pod API，只要 `ssh.direct` 或 `ssh.proxy` 任一�
 先試 direct TCP，失敗後改走 Basic SSH，不會只等 public IP。Direct transfer 使用 rsync；
 proxy 則透過 PTY-safe base64 stream 傳輸，完成 atomic move 前會驗證 SHA-256。
 
+SSH readiness 與 direct/proxy transfer 都使用同一個 progress renderer。因此 detached
+controller log 在 `auto` 模式會得到節流純文字；只有需要安靜機器輸出時，才在 subcommand
+之前傳入全域 `--progress off`。
+
 <!-- sync:start runpod-transport-commands -->
 ```bash
 uv run mltrain-runpod endpoint "$POD_ID"
@@ -242,7 +295,8 @@ key 必須具有 v2 Pod read 權限。Runpod proxy username 是 API 回傳的 op
 不會自行拼接。Basic SSH 不支援 SCP、
 SFTP、rsync 或 port forwarding；本模板預設限制 proxy transfer 為 512 MiB。Dataset 與大型
 checkpoint 應放 image、object storage 或 network volume。Pod 建立、detached training、deadline
-與刪除仍由各專案 controller 負責，並遵守 `runpod-training` skill。
+與刪除仍由各專案 controller 負責，並遵守 `runpod-training` skill。啟用 profiling 時，
+必須在刪除 Pod 前取回包含 `profile/` 的完整 run。
 
 ## 支援狀態
 
@@ -258,6 +312,7 @@ checkpoint 應放 image、object storage 或 network volume。Pod 建立、detac
 | Single-node DDP | Linux amd64, 2× NVIDIA GPU | Supported contract / manual-unverified | No DDP run in this repository |
 | Apptainer / SIF | Linux amd64 | Supported contract / manual-unverified | Apptainer unavailable during bootstrap |
 | Runpod Pod SSH transport | Direct TCP or Basic SSH proxy | Contract-tested / live proxy unverified | Fallback and PTY transfer unit tests; no promoted GPU run |
+| Run-local profiling | CPU/process/system + NVIDIA via `nvidia-smi` | CPU smoke / NVIDIA manual-unverified | Real MNIST CPU-step smoke; mocked NVIDIA contract tests |
 | Multi-node Slurm | — | Out of scope for v1 | No launcher contract |
 <!-- sync:end support-matrix -->
 

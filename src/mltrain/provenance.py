@@ -85,7 +85,14 @@ def hash_path(path: Path) -> str | None:
 
 def package_versions() -> dict[str, str | None]:
     versions: dict[str, str | None] = {}
-    for name in ("ml-dl-training-template", "torch", "torchvision", "pydantic", "PyYAML"):
+    for name in (
+        "ml-dl-training-template",
+        "torch",
+        "torchvision",
+        "pydantic",
+        "PyYAML",
+        "psutil",
+    ):
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

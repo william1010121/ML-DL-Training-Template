@@ -42,10 +42,10 @@ jobs:
         name: Download real MNIST explicitly
         run: uv run --no-sync python scripts/download_mnist.py --root datasets
       - if: matrix.python == '3.12'
-        name: Run one real MNIST CPU optimizer step
+        name: Run one real MNIST CPU optimizer step with profiling
         run: >-
           uv run --no-sync python scripts/smoke_cpu.py
-          --config configs/mnist-baseline/exp-001.yml
+          --config configs/mnist-baseline/exp-004.yml
       - run: uv run --no-sync python scripts/validate_repo.py
       - name: Validate repository-owned skill contract
         run: uv run --no-sync python scripts/validate_skills.py --official skip

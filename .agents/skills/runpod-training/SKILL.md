@@ -23,6 +23,11 @@ and promotion lifecycle authoritative.
    Keep termination monitoring independent of the SSH session.
 7. Retrieve and verify the complete run archive before deleting only the Pod recorded in the
    controller state. A failed transfer, eviction, or timeout is not research evidence.
+8. When profiling is enabled, retrieve the run's `profile/` directory before teardown. Profiling
+   measures stage/resource use; it does not replace the independent cost watchdog.
+9. Make SSH polling, source/evidence transfer, and detached training visibly progress. Use dynamic
+   bars only on a TTY and throttled append-only text in detached logs; never wait for a public IP
+   after the Basic SSH proxy is ready.
 
 ## Stable helper
 
@@ -45,4 +50,6 @@ The same helper provides `exec`, `upload`, and `download`. It reads `RUNPOD_API_
   controller state. Do not store API keys, private-key contents, or secret environment values.
 - Keep device selection fail-closed and preserve canonical local metrics even if controller or
   tracker reporting degrades.
+- Keep progress on stderr and outside controller evidence. A progress bar is not a deadline,
+  cancellation mechanism, or proof that remote training succeeded.
 - Call a path verified only after a real external Pod run produces matching validated evidence.

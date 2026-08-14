@@ -14,10 +14,12 @@ def _parser() -> argparse.ArgumentParser:
 
     train = commands.add_parser("train", help="run a training experiment")
     train.add_argument("--config", type=Path, required=True)
+    train.add_argument("--progress", choices=("auto", "plain", "off"), default="auto")
 
     evaluate = commands.add_parser("evaluate", help="evaluate a checkpoint")
     evaluate.add_argument("--config", type=Path, required=True)
     evaluate.add_argument("--checkpoint", type=Path, required=True)
+    evaluate.add_argument("--progress", choices=("auto", "plain", "off"), default="auto")
 
     validate = commands.add_parser("validate", help="validate run evidence")
     validate.add_argument("--run", type=Path, required=True)
@@ -40,9 +42,9 @@ def main() -> None:
     args = _parser().parse_args()
     try:
         if args.command == "train":
-            print(execute(args.config, "train"))
+            print(execute(args.config, "train", progress=args.progress))
         elif args.command == "evaluate":
-            print(execute(args.config, "evaluate", args.checkpoint))
+            print(execute(args.config, "evaluate", args.checkpoint, progress=args.progress))
         elif args.command == "validate":
             print(json.dumps(validate_run(args.run), indent=2, sort_keys=True))
         elif args.command == "record-result":

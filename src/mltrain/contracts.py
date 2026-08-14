@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
 class StrictModel(BaseModel):
@@ -47,6 +48,11 @@ class TrackingConfig(StrictModel):
     backend: str = "none"
 
 
+class ProfilingConfig(StrictModel):
+    enabled: bool = False
+    sample_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+
+
 class OutputConfig(StrictModel):
     root: Path = Path("runs")
 
@@ -69,6 +75,7 @@ class ExperimentConfig(StrictModel):
     training: dict[str, Any]
     validation: dict[str, Any]
     tracking: TrackingConfig
+    profiling: ProfilingConfig = Field(default_factory=ProfilingConfig)
     output: OutputConfig
 
 
@@ -88,6 +95,28 @@ class ValidationResult(StrictModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ProfileSink(Protocol):
+    def stage(self, name: str, *, epoch: int | None = None) -> AbstractContextManager[None]: ...
+
+
+_ProgressItem = TypeVar("_ProgressItem")
+
+
+class ProgressSink(Protocol):
+    def stage(self, name: str, *, epoch: int | None = None) -> AbstractContextManager[None]: ...
+
+    def iterate(
+        self,
+        iterable: Iterable[_ProgressItem],
+        *,
+        total: int | None,
+        description: str,
+        unit: str = "item",
+        position: int = 0,
+        leave: bool = True,
+    ) -> Iterator[_ProgressItem]: ...
+
+
 class RunContext(StrictModel):
     run_id: str
     run_dir: Path
@@ -95,6 +124,52 @@ class RunContext(StrictModel):
     rank: int = 0
     world_size: int = 1
     is_primary: bool = True
+    _profile_sink: ProfileSink | None = PrivateAttr(default=None)
+    _progress_sink: ProgressSink | None = PrivateAttr(default=None)
+
+    def attach_profile_sink(self, sink: ProfileSink) -> None:
+        """Attach the run-local profiler without serializing runtime state."""
+        self._profile_sink = sink
+
+    def attach_progress_sink(self, sink: ProgressSink) -> None:
+        """Attach ephemeral progress output without serializing runtime state."""
+        self._progress_sink = sink
+
+    def profile_stage(
+        self, name: str, *, epoch: int | None = None
+    ) -> AbstractContextManager[None]:
+        """Time a stable stage name, or become a no-op when profiling is disabled."""
+        if self._profile_sink is None:
+            return nullcontext()
+        return self._profile_sink.stage(name, epoch=epoch)
+
+    def progress_stage(
+        self, name: str, *, epoch: int | None = None
+    ) -> AbstractContextManager[None]:
+        if self._progress_sink is None:
+            return nullcontext()
+        return self._progress_sink.stage(name, epoch=epoch)
+
+    def progress_iter(
+        self,
+        iterable: Iterable[_ProgressItem],
+        *,
+        total: int | None,
+        description: str,
+        unit: str = "item",
+        position: int = 0,
+        leave: bool = True,
+    ) -> Iterator[_ProgressItem]:
+        if self._progress_sink is None:
+            return iter(iterable)
+        return self._progress_sink.iterate(
+            iterable,
+            total=total,
+            description=description,
+            unit=unit,
+            position=position,
+            leave=leave,
+        )
 
     def log_metrics(self, step: int, metrics: Mapping[str, float]) -> None:
         """Append canonical metrics. Only rank zero writes shared evidence."""

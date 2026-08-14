@@ -1,0 +1,40 @@
+schema_version: 1
+experiment:
+  id: exp-004
+  research_line: mnist-baseline
+  goal: Measure phase durations and resource utilization for the CPU baseline recipe.
+  primary_metric:
+    name: validation/loss
+    direction: minimize
+reproducibility:
+  seed: 42
+  mode: strict
+runtime:
+  device: cpu
+  strategy: single
+  world_size: 1
+data:
+  root: datasets
+  batch_size: 128
+  num_workers: 0
+  validation_size: 5000
+model:
+  name: mnist_cnn
+  in_channels: 1
+  num_classes: 10
+  hidden_channels: 32
+training:
+  epochs: 5
+  optimizer:
+    name: adamw
+    learning_rate: 0.001
+    weight_decay: 0.0001
+validation:
+  batch_size: 256
+tracking:
+  backend: noop
+profiling:
+  enabled: true
+  sample_interval_seconds: 1.0
+output:
+  root: runs

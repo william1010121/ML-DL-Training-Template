@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from mltrain.progress import ProgressReporter
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -15,6 +17,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("datasets"),
         help="Dataset root (default: datasets)",
     )
+    parser.add_argument("--progress", choices=("auto", "plain", "off"), default="auto")
     return parser.parse_args()
 
 
@@ -22,6 +25,7 @@ def main() -> int:
     args = parse_args()
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    progress = ProgressReporter(args.progress)
 
     try:
         from torchvision.datasets import MNIST
@@ -30,8 +34,10 @@ def main() -> int:
             "torchvision is required; run `uv sync --locked --extra cpu` first"
         ) from exc
 
-    train = MNIST(root=root, train=True, download=True)
-    test = MNIST(root=root, train=False, download=True)
+    with progress.stage("MNIST training files"):
+        train = MNIST(root=root, train=True, download=True)
+    with progress.stage("MNIST test files"):
+        test = MNIST(root=root, train=False, download=True)
     if len(train) != 60_000 or len(test) != 10_000:
         raise RuntimeError(
             f"unexpected MNIST sizes: train={len(train)}, test={len(test)}"

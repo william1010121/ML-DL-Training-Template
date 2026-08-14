@@ -12,6 +12,7 @@ import yaml
 
 from mltrain import lifecycle
 from mltrain.contracts import ExperimentConfig, RunContext, RunResult, ValidationResult
+from mltrain.profiling import RunProfiler
 
 
 class FakeAdapter:
@@ -224,6 +225,57 @@ def _validate(root: Path, run: Path, monkeypatch: pytest.MonkeyPatch) -> dict[st
     return lifecycle.validate_run(run)
 
 
+def _enable_profile(root: Path, run: Path) -> None:
+    config_path = root / "configs/baseline/exp-001.yml"
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw["profiling"] = {"enabled": True, "sample_interval_seconds": 60.0}
+    config_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    (run / "resolved_config.yml").write_text(
+        yaml.safe_dump(raw, sort_keys=True), encoding="utf-8"
+    )
+    subprocess.run(["git", "add", str(config_path)], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Lifecycle Test",
+            "-c",
+            "user.email=lifecycle-test@example.invalid",
+            "commit",
+            "-qm",
+            "enable profile",
+        ],
+        cwd=root,
+        check=True,
+    )
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    profiler = RunProfiler(
+        run,
+        rank=0,
+        is_primary=True,
+        device="cpu",
+        interval_seconds=60.0,
+    )
+    profiler.start()
+    with profiler.stage("lifecycle/setup"):
+        pass
+    profiler.stop()
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest["source"]["commit"] = source_commit
+    manifest["config"]["source_sha256"] = lifecycle.sha256_file(config_path)
+    manifest["config"]["resolved_sha256"] = lifecycle.sha256_file(
+        run / "resolved_config.yml"
+    )
+    manifest["profiling"] = profiler.evidence()
+    _write_json(run / "manifest.json", manifest)
+
+
 def test_record_result_locks_config_and_is_immutable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -301,6 +353,25 @@ def test_completed_run_promotes_small_reviewable_evidence(
         text=True,
     ).stdout.strip()
     assert f"| Promoted | `exp-001` @ `{commit}` |" in (root / "configs/research.md").read_text()
+
+
+def test_profiled_run_promotes_only_the_small_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run = _repository(tmp_path)
+    _enable_profile(root, run)
+    validation = _validate(root, run, monkeypatch)
+    assert validation["classification"] == "completed"
+
+    artifact = lifecycle.promote_run(run, "Promote profiled baseline")
+
+    assert (artifact / "profile-summary.json").is_file()
+    assert not (artifact / "stages.rank-000.jsonl").exists()
+    assert not (artifact / "resources.rank-000.jsonl").exists()
+    summary = json.loads((artifact / "summary.json").read_text(encoding="utf-8"))
+    assert summary["profile_summary_sha256"] == lifecycle.sha256_file(
+        artifact / "profile-summary.json"
+    )
 
 
 def test_planned_run_promotes_and_records_all_evidence_atomically(
@@ -719,3 +790,65 @@ def test_execute_records_tracker_degradation(
     assert (run_dir / "result.json").is_file()
     assert manifest["status"] == "succeeded"
     assert manifest["tracking"] == {"backend": "broken", "degraded": True}
+    assert "progress" not in manifest
+
+
+def test_execute_attaches_profiler_and_records_manifest_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _config()
+    raw["profiling"] = {"enabled": True, "sample_interval_seconds": 0.2}
+    config = ExperimentConfig.model_validate(raw)
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "metrics.jsonl").touch()
+    context = RunContext(run_id="run", run_dir=run_dir, command=["mltrain", "train"])
+    manifest: dict[str, object] = {
+        "status": "running",
+        "reproducibility": {},
+        "provenance": {},
+        "tracking": {"backend": "none", "degraded": False},
+        "profiling": {
+            "enabled": True,
+            "schema_version": 1,
+            "sample_interval_seconds": 0.2,
+            "status": "pending",
+            "degraded": False,
+            "files": {},
+        },
+    }
+
+    def train(_config: ExperimentConfig, run: RunContext) -> RunResult:
+        with run.profile_stage("epoch/train", epoch=1):
+            pass
+        return RunResult(
+            primary_metric_name="validation/loss",
+            primary_metric=1.0,
+            metrics={"validation/loss": 1.0},
+        )
+
+    adapter = SimpleNamespace(config_model=ExperimentConfig, train=train)
+    monkeypatch.setattr(lifecycle, "load_adapter", lambda: adapter)
+    monkeypatch.setattr(lifecycle, "load_config", lambda _path, _adapter: config)
+    monkeypatch.setattr(lifecycle, "ensure_device", lambda _config: None)
+    monkeypatch.setattr(lifecycle, "configure_reproducibility", lambda _config: {})
+    monkeypatch.setattr(lifecycle, "create_run", lambda *_args: (context, manifest))
+    monkeypatch.setattr(lifecycle, "write_manifest", lambda *_args: None)
+
+    assert lifecycle.execute(config_path, "train") == run_dir
+
+    profile = manifest["profiling"]
+    assert isinstance(profile, dict)
+    assert profile["status"] == "completed"
+    assert profile["degraded"] is False
+    assert set(profile["files"]) == {
+        "stages.rank-000.jsonl",
+        "resources.rank-000.jsonl",
+        "summary.rank-000.json",
+    }
+    stages = (run_dir / "profile/stages.rank-000.jsonl").read_text(encoding="utf-8")
+    assert '"stage":"lifecycle/setup"' in stages
+    assert '"stage":"epoch/train"' in stages
+    assert '"stage":"lifecycle/finalize"' in stages

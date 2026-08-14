@@ -6,7 +6,11 @@
 - Keep project code in `src/<project_package>/{data,model,training,validate,tracking}/`.
 - Keep experiment intent in full standalone `configs/<research-line>/exp-###.yml` files.
 - Keep full runtime evidence in ignored `runs/` and curated small evidence in tracked `artifacts/`.
+- Keep raw profiling JSONL in each ignored run's `profile/`; promotion may include only its small
+  checksummed summary.
 - Keep actual data in ignored `datasets/` and weights in ignored `checkpoints/`.
+- Keep progress as stderr-only runtime presentation. Do not add it to experiment YAML, manifests,
+  research claims, or promoted evidence; use profile output for durable timing/resource evidence.
 
 Do not introduce imports from `mltrain` into a specific project implementation beyond public contracts. Keep validation independent of training orchestration.
 
