@@ -6,7 +6,7 @@
 
 Most training repositories make it easy to start a run and hard to explain it six weeks later. This template treats the experiment config as intent, the run manifest as evidence, and the research notes as the decision record. Data, weights, logs, and checkpoints stay outside Git; the small facts needed to reproduce a result stay reviewable.
 
-It ships with a real MNIST reference project, strict Pydantic configuration, local-first metrics, a stable `mltrain` CLI, environment-only containers, and repository-local Codex skills for evolving the project safely.
+It ships with a real MNIST reference project, strict Pydantic configuration, local-first metrics, a stable `mltrain` CLI, environment-only containers, and repository-local agent skills for evolving the project safely.
 
 ## Why this template
 
@@ -15,7 +15,7 @@ It ships with a real MNIST reference project, strict Pydantic configuration, loc
 - **Clean by construction.** Datasets, checkpoints, complete runs, SIF files, and secrets are ignored.
 - **One environment definition.** Docker is the source of truth; Apptainer consumes the same immutable OCI image.
 - **Tracking is optional.** Canonical JSONL and manifests are always written locally; external trackers are adapters.
-- **AI-agent friendly.** Repo-local skills preserve experiment numbering, research records, and dependency boundaries.
+- **AI-agent friendly.** Repo-local skills preserve experiment numbering, research records, and dependency boundaries, and are shared by Codex and Claude Code.
 
 ## Five-minute CPU start
 
@@ -63,7 +63,8 @@ Promotion stores only small, reviewable metadata in `artifacts/`; it does not co
 
 ```text
 .
-├── .agents/skills/               # Repo-local project governance
+├── .agents/skills/               # Repo-local project governance (authoritative)
+├── .claude/                      # Claude Code pointers: skills, commands, settings
 ├── src/
 │   ├── mltrain/                   # Stable CLI, contracts, provenance gates
 │   └── ml_training_template/      # Replaceable project adapter
@@ -215,7 +216,7 @@ python .agents/skills/training-manager/scripts/new_experiment.py baseline \
 ```
 <!-- sync:end scaffold-commands -->
 
-These commands never overwrite files. Codex discovers the skills in `.agents/skills/`; `AGENTS.md` tells agents when the workflows are mandatory.
+These commands never overwrite files. `.agents/skills/` holds the authoritative skill definitions: Codex discovers them there directly, and Claude Code reaches the same files through `CLAUDE.md` and the pointer skills in `.claude/skills/`. `AGENTS.md` tells every agent when the workflows are mandatory, and `CLAUDE.md` imports it rather than restating it.
 
 ## Native, Docker, Apptainer, and Runpod
 
