@@ -65,6 +65,7 @@ Promotion 只會把可 review 的小型 metadata 寫進 `artifacts/`，不會提
 .
 ├── .agents/skills/               # Repo-local 專案治理流程（權威來源）
 ├── .claude/                      # Claude Code 的 skills、commands 與 settings 轉接層
+├── docs/                         # 決策紀錄與實作筆記
 ├── src/
 │   ├── mltrain/                   # 固定 CLI、contract、provenance gate
 │   └── ml_training_template/      # 可替換的 project adapter

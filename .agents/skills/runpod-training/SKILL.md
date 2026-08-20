@@ -28,6 +28,10 @@ and promotion lifecycle authoritative.
 9. Make SSH polling, source/evidence transfer, and detached training visibly progress. Use dynamic
    bars only on a TTY and throttled append-only text in detached logs; never wait for a public IP
    after the Basic SSH proxy is ready.
+10. When provider behavior forced a non-obvious approach — an endpoint quirk, a transport
+    limitation, or a rejected simpler transfer path — record it in `docs/decisions/` and index it
+    in the `## Global Decisions` table of `configs/research.md`. Put mechanism-level notes about
+    the controller or transport in `docs/notes/`.
 
 ## Stable helper
 

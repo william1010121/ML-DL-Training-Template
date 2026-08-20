@@ -19,6 +19,10 @@ Preserve the repository's separation between experiment intent, runtime evidence
    SSH readiness, remote transfer, watchdog, or teardown behavior.
 8. Give long training, evaluation, download, hashing, waiting, and transfer operations honest
    progress. Do not add fake progress bars to fast config, registry, research, or promotion writes.
+9. When the change involved a non-obvious decision — an architectural boundary, a rejected
+   obvious alternative, or a constraint that forced an unusual approach — record it in
+   `docs/decisions/` and index it in the `## Global Decisions` table of `configs/research.md`.
+   Routine experiment and config work does not need an entry.
 
 ## Deterministic operations
 

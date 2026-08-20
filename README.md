@@ -65,6 +65,7 @@ Promotion stores only small, reviewable metadata in `artifacts/`; it does not co
 .
 ├── .agents/skills/               # Repo-local project governance (authoritative)
 ├── .claude/                      # Claude Code pointers: skills, commands, settings
+├── docs/                         # Decisions and implementation notes
 ├── src/
 │   ├── mltrain/                   # Stable CLI, contracts, provenance gates
 │   └── ml_training_template/      # Replaceable project adapter

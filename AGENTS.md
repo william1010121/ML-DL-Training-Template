@@ -42,6 +42,14 @@ A completed result requires a clean source commit, config/environment/data/model
 
 The commit recorded in research is the source commit that produced the run, not the later evidence-documentation commit. Do not manufacture metrics, hashes, badges, support claims, or sample evidence.
 
+## Implementation records
+
+When a change involved a non-obvious decision — an architectural boundary, a rejected obvious
+alternative, or a constraint that forced an unusual approach — record it in `docs/decisions/` and
+index it in the `## Global Decisions` table of `configs/research.md`. Put mechanism-level
+implementation notes in `docs/notes/`. Routine work does not need an entry; see `docs/README.md`
+for the threshold and the expected shape.
+
 ## Repository hygiene
 
 - Never commit dataset bytes, model weights, checkpoints, complete runs, raw profile logs, SIF images, cache files, `.env`, credentials, or generated tracker directories.
