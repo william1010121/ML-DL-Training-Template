@@ -6,7 +6,7 @@
 
 很多訓練專案很容易開始，六週後卻很難說清楚結果從哪裡來。這份模板把 experiment config 當成「意圖」、run manifest 當成「證據」、research note 當成「決策紀錄」。資料、權重、logs 與 checkpoints 留在 Git 外；重現結果所需的小型事實則保留成可 review 的文件。
 
-模板包含真的 MNIST 參考專案、嚴格 Pydantic config、local-first metrics、固定的 `mltrain` CLI、只封裝環境的 container，以及用來安全維護研究流程的 repo-local Codex skills。
+模板包含真的 MNIST 參考專案、嚴格 Pydantic config、local-first metrics、固定的 `mltrain` CLI、只封裝環境的 container，以及用來安全維護研究流程的 repo-local agent skills。
 
 ## 為什麼值得用
 
@@ -15,7 +15,7 @@
 - **乾淨是預設行為。** Dataset、checkpoint、完整 run、SIF 與 secret 都不進 Git。
 - **只維護一份環境。** Docker 是 source of truth，Apptainer 使用同一個 immutable OCI image。
 - **Tracker 是 optional。** 本機 JSONL 與 manifest 永遠存在，外部 tracker 只是 adapter。
-- **適合 AI agent 協作。** Repo-local skills 維護實驗編號、研究紀錄與依賴邊界。
+- **適合 AI agent 協作。** Repo-local skills 維護實驗編號、研究紀錄與依賴邊界，Codex 與 Claude Code 共用同一份。
 
 ## 五分鐘 CPU 開始
 
@@ -63,7 +63,8 @@ Promotion 只會把可 review 的小型 metadata 寫進 `artifacts/`，不會提
 
 ```text
 .
-├── .agents/skills/               # Repo-local 專案治理流程
+├── .agents/skills/               # Repo-local 專案治理流程（權威來源）
+├── .claude/                      # Claude Code 的 skills、commands 與 settings 轉接層
 ├── src/
 │   ├── mltrain/                   # 固定 CLI、contract、provenance gate
 │   └── ml_training_template/      # 可替換的 project adapter
@@ -212,7 +213,7 @@ python .agents/skills/training-manager/scripts/new_experiment.py baseline \
 ```
 <!-- sync:end scaffold-commands -->
 
-這些命令永不覆寫檔案。Codex 會從 `.agents/skills/` 發現 skills；`AGENTS.md` 則規定什麼情況必須使用它們。
+這些命令永不覆寫檔案。`.agents/skills/` 是 skills 的權威來源：Codex 直接從該處發現，Claude Code 則透過 `CLAUDE.md` 與 `.claude/skills/` 的轉接層讀取同一份檔案。`AGENTS.md` 規定什麼情況必須使用這些流程，`CLAUDE.md` 直接匯入它而不另寫一份。
 
 ## Native、Docker、Apptainer 與 Runpod
 

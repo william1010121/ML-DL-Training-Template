@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run mypy:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python scripts/validate_repo.py:*)",
+      "Bash(uv run python scripts/validate_skills.py:*)",
+      "Bash(uv run python scripts/check_readme_sync.py:*)"
+    ]
+  }
+}

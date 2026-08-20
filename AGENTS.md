@@ -22,6 +22,10 @@ detached execution, cost watchdogs, or teardown, also read and follow
 `.agents/skills/runpod-training/SKILL.md`. Basic SSH proxy availability must prevent public-IP-only
 wait loops; support claims still require real evidence.
 
+`.agents/skills/` is the authoritative location for these skills. Codex discovers them there
+directly; Claude Code reaches the same files through `CLAUDE.md` and the pointer skills in
+`.claude/skills/`. Change the `.agents/` source, never a tool-specific copy.
+
 ## Architecture invariants
 
 - `src/mltrain/` is the stable governance and CLI layer. It must not import the project package directly; load the configured `ProjectAdapter` dynamically.
