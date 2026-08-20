@@ -4,7 +4,9 @@ argument-hint: [run-path]
 arguments: "run-path"
 ---
 
-Turn the run at `$run-path` into a research result.
+Turn the run at `$run-path` into a research result. The rules governing this workflow live in
+`.agents/skills/training-manager/SKILL.md` and `AGENTS.md`; read them rather than relying on this
+file to restate them.
 
 1. Validate the evidence first and show me the JSON:
 
@@ -12,8 +14,7 @@ Turn the run at `$run-path` into a research result.
    uv run mltrain validate --run $run-path
    ```
 
-2. Read the classification. A performance-mode or dirty run is exploratory; only a clean, strict,
-   completed run may be promoted.
+2. Read the classification and tell me which outcome it allows.
 3. Propose the decision text, then run exactly one of:
 
    ```bash
@@ -21,6 +22,4 @@ Turn the run at `$run-path` into a research result.
    uv run mltrain promote --run $run-path --decision "<decision>"
    ```
 
-Never hand-edit `configs/registry.yml` or a `research.md` result row to claim a result the CLI did
-not validate. The commit recorded in research is the source commit that produced the run, not the
-later documentation commit.
+Let the CLI be the only writer of registry and research state.

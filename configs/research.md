@@ -14,3 +14,4 @@ Train reproducible baselines that minimize `validation/loss` while keeping every
 
 | Commit | Decision | Reason |
 | --- | --- | --- |
+| `8594550` | Claude Code reads the shared contract through pointers, not a copy | [docs/decisions/claude-code-adapter.md](../docs/decisions/claude-code-adapter.md) |

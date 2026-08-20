@@ -6,14 +6,6 @@ description: Govern reproducible experiments in repositories created from this M
 # Training Manager (pointer)
 
 The authoritative workflow is `.agents/skills/training-manager/SKILL.md`. Read it, and the
-`.agents/skills/training-manager/references/repository-contract.md` it cites, before changing
-source, configs, registry state, research records, or artifacts.
-
-Rules worth knowing before you open those files:
-
-- Use the bundled scripts under `.agents/skills/training-manager/scripts/`. Run each without
-  `--apply` first, review the diff, then rerun with `--apply`.
-- An experiment config is mutable only while its registry status is `planned`. After a result is
-  recorded, create the next `exp-###.yml` instead of editing it.
-- Never hand-edit `configs/registry.yml` or a `research.md` result row to claim something the CLI
-  did not validate.
+`.agents/skills/training-manager/references/repository-contract.md` it cites, before acting. This
+file is a pointer so that Claude Code can discover the skill; it deliberately does not restate the
+rules.

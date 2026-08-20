@@ -19,6 +19,10 @@ Keep local run evidence authoritative. Treat external trackers as replaceable pr
    correlation, rank-specific files for DDP, and bounded background sampling.
 8. Keep progress ephemeral. Write it to stderr, use dynamic bars only for TTYs, throttle plain
    detached logs to 5% or 30 seconds, and render DDP progress on rank zero only.
+9. When an integration forced a non-obvious choice — a provider constraint, a rejected simpler
+   adapter shape, or a failure mode that shaped the design — record it in `docs/decisions/` and
+   index it in the `## Global Decisions` table of `configs/research.md`. Put mechanism-level
+   notes about how the adapter or profiler works in `docs/notes/`.
 
 ## Required behavior
 

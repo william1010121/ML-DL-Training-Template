@@ -17,7 +17,9 @@ from _common import PACKAGE_RE, dump_yaml, reject_symlinks, repo_root, show_diff
 
 TEXT_SUFFIXES = {".md", ".py", ".toml", ".yml", ".yaml"}
 SKIP_PARTS = {".git", ".venv", "datasets", "checkpoints", "runs"}
-MNIST_PATHS = (
+TEMPLATE_ONLY_PATHS = (
+    "docs/decisions",
+    "docs/notes",
     "configs/mnist-baseline",
     "artifacts/mnist-baseline",
     "scripts/download_mnist.py",
@@ -300,9 +302,9 @@ def main() -> int:
     if new_package_dir.exists():
         raise SystemExit(f"refusing to overwrite package directory: {new_package_dir}")
 
-    removal_candidates = [root / value for value in MNIST_PATHS]
+    removal_candidates = [root / value for value in TEMPLATE_ONLY_PATHS]
     known_mnist_tests = {
-        root / value for value in MNIST_PATHS if value.startswith("tests/test_mnist")
+        root / value for value in TEMPLATE_ONLY_PATHS if value.startswith("tests/test_mnist")
     }
     unexpected_mnist_tests = sorted(
         path for path in (root / "tests").glob("test_mnist*.py") if path not in known_mnist_tests
@@ -409,7 +411,7 @@ def main() -> int:
     print(f"{'APPLY' if args.apply else 'DRY-RUN'}: initialize {project_name}")
     print(f"Rename: src/{old_package} -> src/{args.package_name}")
     for path in existing_removals:
-        print(f"Remove MNIST example: {path.relative_to(root)}")
+        print(f"Remove template-only content: {path.relative_to(root)}")
     print("Remove stale lockfile: uv.lock")
     for path, (before, after) in rewrites.items():
         show_diff(path, before, after)
